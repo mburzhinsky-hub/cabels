@@ -1,0 +1,947 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабельный журнал CAD — стабильная версия</title>
+<style>
+:root{--bg:#eef3f8;--panel:#fff;--text:#0f172a;--muted:#64748b;--border:#cbd5e1;--blue:#2563eb;--orange:#f97316;--green:#16a34a;--red:#dc2626}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font-family:ISOCPEUR,Arial,sans-serif;font-size:12pt;font-style:italic}
+button,input,select{font:inherit;font-size:12px}
+button{border:1px solid var(--border);background:#fff;border-radius:9px;padding:7px 10px;cursor:pointer}
+button:hover{border-color:var(--blue);background:#eff6ff}
+button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}button.danger{background:var(--red);color:#fff;border-color:var(--red)}
+input,select{border:1px solid var(--border);border-radius:8px;padding:7px;width:100%;background:#fff}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}
+.app{height:100%;display:grid;grid-template-columns:300px 1fr 390px;grid-template-rows:52px 1fr 230px}
+.app.schemeWide{grid-template-columns:1fr;grid-template-rows:52px 1fr 92px}
+.app.schemeWide .left{display:none}
+.app{position:relative}
+.app.schemeWide .right{display:block;position:absolute;right:12px;top:64px;bottom:104px;width:410px;z-index:75;border:1px solid var(--border);box-shadow:0 12px 32px #0003;border-radius:14px}
+.app.schemeWide .right.inspectorHidden{display:none}
+.app.schemeWide .top,.app.schemeWide .center,.app.schemeWide .bottom{grid-column:1/2}
+.app.schemeWide .center{grid-row:2/3}
+.app.schemeWide .bottom{grid-row:3/4;max-height:92px}
+.app.schemeWide .bottom table{font-size:10px}
+.app.schemeWide .tableHead{padding:4px 10px}
+
+.top{grid-column:1/4;background:#111827;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 12px}
+.top button{background:#1f2937;color:#fff;border-color:#334155}.actions{display:flex;gap:7px;align-items:center}.brand{font-weight:800}
+.left{grid-row:2/4;background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column}
+.right{grid-row:2/4;background:#fff;border-left:1px solid var(--border);overflow:auto;padding:12px}
+.center{position:relative;overflow:hidden;background:#f8fafc}.bottom{grid-column:2/3;background:#fff;border-top:1px solid var(--border);overflow:auto}
+.panelHead{padding:10px 12px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}.panelTitle{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.08em}
+.libraryTools{padding:10px;border-bottom:1px solid var(--border);display:grid;gap:7px}.library{overflow:auto;padding:10px}
+.preset{border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:8px;background:#fff;cursor:grab}.preset:hover{border-color:var(--blue);background:#f8fbff}.preset strong{display:block;font-size:13px}.preset span{font-size:11px;color:var(--muted)}
+.toolbar{position:absolute;z-index:50;left:12px;top:12px;display:flex;gap:7px;align-items:center;flex-wrap:wrap;background:#ffffffdd;border:1px solid var(--border);border-radius:14px;padding:8px;box-shadow:0 8px 24px #0002}
+.layers{position:absolute;z-index:50;right:12px;top:12px;background:#ffffffdd;border:1px solid var(--border);border-radius:14px;padding:8px;box-shadow:0 8px 24px #0002;font-size:12px}
+.layers label{display:flex;gap:5px;align-items:center;margin:4px 0;color:#334155}.layers input{width:auto}
+.stageOuter{position:absolute;inset:0;overflow:hidden}.stageOuter.panning{cursor:grabbing}
+.stage{position:absolute;left:0;top:0;width:3600px;height:2400px;transform-origin:0 0;background:#fff;background-image:linear-gradient(rgba(148,163,184,.28) 1px,transparent 1px),linear-gradient(90deg,rgba(148,163,184,.28) 1px,transparent 1px),linear-gradient(rgba(15,23,42,.15) 1px,transparent 1px),linear-gradient(90deg,rgba(15,23,42,.15) 1px,transparent 1px);background-size:20px 20px,20px 20px,100px 100px,100px 100px}
+#wires{position:absolute;inset:0;width:3600px;height:2400px;z-index:3;pointer-events:none}
+.sheet{position:absolute;left:0;top:0;border:2px solid #111827;background:transparent;z-index:0}.titleBlock{position:absolute;right:0;bottom:0;width:520px;height:145px;background:#fff;border-left:2px solid #111827;border-top:2px solid #111827;display:grid;grid-template-columns:80px 1fr 100px;grid-template-rows:32px 32px 32px 49px;font-size:11pt}.titleBlock div{border-right:1px solid #111827;border-bottom:1px solid #111827;padding:5px}.titleBlock .editable{cursor:pointer}.titleBlock .editable:hover{background:#dbeafe}.titleBlock .big{font-weight:800;font-size:13pt}
+.room{position:absolute;z-index:1;background:rgba(226,232,240,.26);border:2px solid #64748b;border-radius:4px}.room.selected{border-color:var(--blue);box-shadow:0 0 0 3px #2563eb33}.roomLabel{position:absolute;left:8px;top:6px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:4px 7px;font-weight:800;font-size:12px;cursor:move}.dimH,.dimV{position:absolute;background:#fff;border:1px solid var(--border);border-radius:999px;padding:2px 6px;font-size:11px}.dimH{left:50%;bottom:-22px;transform:translateX(-50%)}.dimV{right:-32px;top:50%;transform:translateY(-50%) rotate(90deg)}
+
+/* Clean vertical engineering blocks */
+.device{
+  position:absolute;
+  z-index:5;
+  background:#fff;
+  border:2px solid #7c3aed;
+  border-radius:12px;
+  box-shadow:0 8px 22px #0002;
+  overflow:visible;
+  color:#0f172a;
+}
+.device.selected{border-color:#7c3aed;box-shadow:0 0 0 4px #7c3aed33,0 8px 22px #0002}
+.device.router{border-color:#7c3aed}.device.switch{border-color:#2563eb}.device.patch{border-color:#0f766e}.device.server{border-color:#0891b2}.device.hdmi,.device.display{border-color:#ea580c}.device.kvm{border-color:#9333ea}.device.amp,.device.speaker{border-color:#be123c}
+
+.devTag{
+  position:absolute;right:10px;top:-14px;
+  background:#0f172a;color:#fff;border-radius:999px;
+  padding:3px 9px;font-weight:800;font-size:10px;box-shadow:0 3px 9px #0004;
+  max-width:75%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.devHead{
+  height:72px;
+  border-bottom:1px solid var(--border);
+  background:linear-gradient(#f8fafc,#eef2f7);
+  border-radius:10px 10px 0 0;
+  display:flex;align-items:center;gap:9px;
+  padding:8px 10px;cursor:move;
+}
+.devIcon{
+  width:34px;height:34px;border-radius:10px;background:#e0f2fe;border:1px solid #7dd3fc;
+  display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto;
+}
+.devTitle{font-weight:800;font-size:13px;line-height:1.15;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.devModel{font-size:11px;color:var(--muted);line-height:1.15;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-top:2px}
+.devMeta{
+  position:absolute;left:54px;right:54px;top:84px;
+  display:grid;grid-template-columns:1fr;gap:4px;
+  font-size:10px;color:#475569;
+}
+.devMeta div{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:3px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.deviceCenterTitle{
+  position:absolute;left:58px;right:58px;top:176px;bottom:14px;
+  display:flex;align-items:center;justify-content:center;text-align:center;
+  color:#94a3b8;font-size:12px;line-height:1.35;pointer-events:none;
+}
+.sideTitle{position:absolute;top:118px;font-size:10px;font-weight:800;color:#64748b}
+.sideTitle.left{left:10px}.sideTitle.right{right:10px}
+.sidePorts{
+  position:absolute;top:136px;bottom:14px;width:44px;
+  display:flex;flex-direction:column;gap:4px;
+}
+.sidePorts.left{left:10px}.sidePorts.right{right:10px}
+.portBox{
+  flex:1;min-height:17px;border:1px solid var(--border);border-radius:5px;background:#fff;
+  display:flex;align-items:center;justify-content:center;
+  line-height:1;font-size:9px;overflow:hidden;color:#334155;
+}
+.portBox.used.in{background:#e0f2fe;border-color:#0ea5e9;color:#075985}.portBox.used.out{background:#ffedd5;border-color:#f97316;color:#9a3412}
+
+.patchRows{
+  position:absolute;left:10px;right:10px;top:136px;bottom:14px;
+  display:grid;grid-template-columns:1fr 1fr;gap:8px;
+}
+.patchCol{display:flex;flex-direction:column;gap:3px;min-width:0}
+.patchColTitle{font-size:10px;color:#64748b;font-weight:800;text-align:center}
+.patchCol .portBox{height:16px;flex:1}
+
+.portDot{
+  position:absolute;width:12px;height:12px;border-radius:50%;background:#fff;border:2px solid var(--blue);
+  z-index:8;cursor:crosshair;
+}
+.portDot.in{border-color:#0ea5e9}.portDot.out{border-color:#f97316}.portDot.used.in{background:#0ea5e9}.portDot.used.out{background:#f97316}
+.portDot.active{background:#f59e0b!important;border-color:#92400e!important;box-shadow:0 0 0 5px #f59e0b44}
+.portDot:hover::after{content:attr(data-tip);position:absolute;left:14px;top:-8px;white-space:nowrap;background:#0f172a;color:#fff;border-radius:8px;padding:5px 7px;font-size:11px;z-index:80}
+.handle{position:absolute;width:14px;height:14px;right:-7px;bottom:-7px;border-radius:4px;background:var(--blue);border:2px solid #fff;box-shadow:0 3px 8px #0003;cursor:nwse-resize;z-index:20;display:none}
+.delete{position:absolute;width:20px;height:20px;right:-10px;top:-10px;border-radius:50%;background:var(--red);color:#fff;border:2px solid #fff;box-shadow:0 3px 8px #0003;cursor:pointer;z-index:21;text-align:center;line-height:16px;font-weight:900;display:none}
+.selected .handle,.selected .delete{display:block}
+
+.wire{fill:none;stroke:var(--orange);stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}.wire.selected{stroke:var(--blue);stroke-width:4}.wireLabel{paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round;font-size:10px;fill:#334155;pointer-events:none}
+.tableHead{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:#fff;z-index:2}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid var(--border);padding:5px;text-align:left;vertical-align:top}th{background:#f8fafc;position:sticky;top:38px}
+.field{margin-bottom:8px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.card{border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:8px;background:#fff}.hint{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:9px;font-size:12px;color:#475569;margin:8px 0;line-height:1.4}.badge{display:inline-flex;border-radius:999px;background:#f1f5f9;padding:3px 7px;font-size:11px;margin:2px;color:#334155}
+.cableGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cableRouteGrid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px}.portEditHead,.portEditRow{display:grid;grid-template-columns:42px 72px 1.1fr 80px 110px 1fr 34px;gap:5px;align-items:center}.portEditHead{font-size:10px;font-weight:800;color:#64748b;margin:8px 0 4px}.portEditRow{margin-bottom:5px}.portEditRow input,.portEditRow select{font-size:11px;padding:5px}.portEditRow .busy{background:#f0fdf4;border-color:#22c55e}
+.contextMenu{position:fixed;display:none;z-index:200;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 24px #0002;padding:6px;min-width:190px}.contextMenu button{display:block;width:100%;text-align:left;border:0;background:#fff;border-radius:8px}.contextMenu button:hover{background:#eff6ff}
+.modalBackdrop{position:fixed;inset:0;background:#0008;display:none;z-index:300;align-items:center;justify-content:center}.modal{width:min(900px,92vw);max-height:86vh;overflow:hidden;background:#fff;border-radius:16px;display:flex;flex-direction:column}.modalHead{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}.modalBody{padding:12px;overflow:auto}.presetGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.bigPreset{border:1px solid var(--border);border-radius:14px;padding:12px;background:#fff;cursor:pointer}.bigPreset:hover{border-color:var(--blue);background:#eff6ff}
+.command{position:absolute;left:12px;bottom:12px;z-index:60;background:#0f172ae6;color:#fff;border-radius:12px;padding:8px 10px;display:flex;gap:8px;align-items:center;min-width:520px}.command input{background:#111827;color:#fff;border-color:#334155;height:30px}
+@media print{.top,.left,.right,.bottom,.toolbar,.layers,.command,.contextMenu{display:none!important}.app{display:block;height:auto}.center{width:100vw;height:100vh}.stageOuter{position:absolute!important;inset:0!important;overflow:hidden}.stage{background:#fff!important}.device,.room{box-shadow:none!important}}
+
+/* FINAL OVERRIDE: neat compact vertical engineering blocks */
+.device{
+  overflow:visible!important;
+  background:#fff!important;
+}
+.device .devHead{
+  height:68px!important;
+}
+.device .devMeta{
+  left:12px!important;
+  right:12px!important;
+  top:78px!important;
+  grid-template-columns:1fr 1fr!important;
+}
+.device .deviceCenterTitle{
+  top:170px!important;
+  left:70px!important;
+  right:70px!important;
+  bottom:16px!important;
+  color:#94a3b8!important;
+}
+.device .sidePorts{
+  top:170px!important;
+  bottom:18px!important;
+  width:44px!important;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  border-radius:0!important;
+  padding:0!important;
+  display:flex!important;
+  flex-direction:column!important;
+  gap:4px!important;
+  z-index:2!important;
+}
+.device .sidePorts.left{left:12px!important;right:auto!important}
+.device .sidePorts.right{right:12px!important;left:auto!important}
+.device .sideTitle{top:150px!important}
+.device .sideTitle.left{left:12px!important}
+.device .sideTitle.right{right:12px!important}
+.device .portBox{
+  width:100%!important;
+  min-width:0!important;
+  max-width:44px!important;
+  height:auto!important;
+  min-height:16px!important;
+  border-radius:4px!important;
+  box-shadow:none!important;
+  background:#fff!important;
+  padding:0!important;
+}
+.device .patchRows{
+  top:150px!important;
+  bottom:16px!important;
+  left:12px!important;
+  right:12px!important;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  padding:0!important;
+}
+.device .patchCol{min-width:0!important}
+.device .delete{z-index:30!important}
+.device .handle{z-index:30!important}
+
+
+/* COMPACT LAYOUT FIX: keep everything in one block, no overlaps */
+.device .devMeta{
+  display:grid!important;
+  grid-template-columns:1fr 1fr!important;
+  gap:4px!important;
+}
+.device .sidePorts{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch!important;
+  justify-content:flex-start!important;
+  gap:4px!important;
+}
+.device .portBox{
+  flex:none!important;
+  height:18px!important;
+  min-height:18px!important;
+  line-height:18px!important;
+  padding:0!important;
+}
+.device .patchCol .portBox{
+  flex:none!important;
+  height:18px!important;
+  min-height:18px!important;
+}
+.device .deviceCenterTitle{
+  display:flex!important;
+  align-items:flex-end!important;
+  justify-content:center!important;
+  padding-bottom:8px!important;
+}
+
+
+/* STRICT BLOCK LAYOUT FIX */
+.device{
+  position:absolute;
+  overflow:visible!important;
+  background:#fff!important;
+  border:2px solid #8b5cf6!important;
+  border-radius:14px!important;
+  box-shadow:0 10px 24px rgba(0,0,0,.12)!important;
+  color:#0f172a!important;
+}
+.device.selected{
+  box-shadow:0 0 0 4px rgba(139,92,246,.22),0 10px 24px rgba(0,0,0,.12)!important;
+}
+.device .devHead{
+  height:70px!important;
+  padding:10px 12px!important;
+  display:flex!important;
+  gap:10px!important;
+  align-items:center!important;
+  border-bottom:1px solid #d7deea!important;
+  background:linear-gradient(#f8fafc,#eef2f7)!important;
+  border-radius:12px 12px 0 0!important;
+}
+.device .devIcon{
+  width:36px!important;height:36px!important;border-radius:10px!important;
+  background:#e0f2fe!important;border:1px solid #7dd3fc!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  font-size:16px!important;flex:0 0 auto!important;
+}
+.device .devTitle{
+  font-weight:800!important;font-size:13px!important;line-height:1.15!important;
+  white-space:normal!important;overflow:hidden!important;display:-webkit-box!important;
+  -webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;
+}
+.device .devModel{
+  font-size:11px!important;line-height:1.15!important;color:#64748b!important;margin-top:2px!important;
+  white-space:normal!important;overflow:hidden!important;display:-webkit-box!important;
+  -webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;
+}
+.device .devTag{
+  position:absolute!important;right:10px!important;top:-14px!important;
+  background:#0f172a!important;color:#fff!important;border-radius:999px!important;
+  padding:3px 9px!important;font-weight:800!important;font-size:10px!important;
+  box-shadow:0 3px 9px rgba(0,0,0,.25)!important;
+  max-width:75%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+}
+.device .metaGrid{
+  position:absolute!important;left:12px!important;right:12px!important;top:82px!important;
+  display:grid!important;grid-template-columns:1fr 1fr!important;gap:5px!important;
+}
+.device .metaItem{
+  background:#f8fafc!important;border:1px solid #d7deea!important;border-radius:6px!important;
+  padding:4px 6px!important;font-size:10px!important;line-height:1.1!important;color:#475569!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+}
+.device .portsWrap2{
+  position:absolute!important;left:10px!important;right:10px!important;top:160px!important;bottom:14px!important;
+  display:grid!important;grid-template-columns:46px 1fr 46px!important;gap:10px!important;
+  overflow:hidden!important;
+}
+.device .portsWrapPatch{
+  position:absolute!important;left:10px!important;right:10px!important;top:160px!important;bottom:14px!important;
+  display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;
+  overflow:hidden!important;
+}
+.device .portsCol2{
+  display:flex!important;flex-direction:column!important;align-items:stretch!important;min-width:0!important;height:100%!important;
+}
+.device .portsLabel2{
+  flex:0 0 auto!important;font-size:10px!important;line-height:12px!important;height:12px!important;
+  color:#64748b!important;font-weight:800!important;text-align:center!important;margin-bottom:4px!important;
+}
+.device .portsStack2{
+  flex:1 1 auto!important;display:flex!important;flex-direction:column!important;gap:4px!important;min-height:0!important;
+}
+.device .portsFill2{
+  background:transparent!important;border:0!important;border-radius:0!important;
+}
+.device .portBox2{
+  flex:0 0 18px!important;height:18px!important;min-height:18px!important;
+  border:1px solid #cbd5e1!important;border-radius:4px!important;background:#fff!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  font-size:9px!important;line-height:18px!important;color:#334155!important;
+  overflow:hidden!important;
+}
+.device .portBox2.used.in{background:#e0f2fe!important;border-color:#0ea5e9!important;color:#075985!important}
+.device .portBox2.used.out{background:#ffedd5!important;border-color:#f97316!important;color:#9a3412!important}
+.device .delete{z-index:30!important}
+.device .handle{z-index:30!important}
+
+</style>
+</head>
+<body>
+<div class="app schemeWide">
+<header class="top"><div class="brand">Кабельный журнал CAD <span style="color:#cbd5e1;font-weight:400">стабильная версия</span></div><div class="actions"><span id="status" style="font-size:12px;color:#cbd5e1">Готово</span><button onclick="openAddBlock()">+ Блок</button><button onclick="addRoom()">+ Помещение</button><button onclick="saveLocal()">Сохранить</button><button onclick="loadLocal()">Загрузить</button><button onclick="exportJSON()">JSON</button><button onclick="document.getElementById(\'jsonImport\').click()">Импорт JSON</button><input id="jsonImport" type="file" accept=".json,application/json" style="display:none" onchange="importJSONFile(event)"><button onclick="exportXLS()" class="primary">Excel</button><button onclick="exportPDF()">PDF схемы</button><button onclick="selfCheck()">Проверка</button><button onclick="loadDemo()">Демо</button></div></header>
+<aside class="left"><div class="panelHead"><div class="panelTitle">Библиотека блоков</div><button onclick="openAddBlock()">Добавить</button></div><div class="libraryTools"><input id="search" placeholder="Поиск блока..." oninput="renderLibrary()"><select id="cat" onchange="renderLibrary()"><option value="">Все категории</option><option>Сеть</option><option>Серверы</option><option>Видео</option><option>Управление</option><option>Аудио</option><option>Инфраструктура</option></select></div><div id="library" class="library"></div></aside>
+<main class="center">
+<div class="toolbar"><button id="tool_select" onclick="setTool('select')">Выбор</button><button id="tool_connect" onclick="setTool('connect')">Кабель</button><button id="tool_pan" onclick="setTool('pan')">Рука</button><button onclick="zoomBy(1.15)">+</button><button onclick="zoomBy(.87)">−</button><span id="zoomLabel" style="font-size:12px">100%</span><button onclick="fitView()">Вписать</button><button onclick="toggleWide()">Большая схема</button><button onclick="toggleInspector()">Инспектор</button><button onclick="duplicateSelected()">Дублировать</button><button class="danger" onclick="deleteSelected()">Удалить</button><select id="sheetFormat" style="width:75px" onchange="project.sheet=this.value;renderAll()"><option>A3</option><option>A2</option><option>A1</option></select><button onclick="openSheetEditor()">Штамп</button></div>
+<div class="layers"><strong>Слои</strong><label><input type="checkbox" id="layerSheet" checked onchange="renderAll()"> Лист</label><label><input type="checkbox" id="layerRooms" checked onchange="renderAll()"> Помещения</label><label><input type="checkbox" id="layerCables" checked onchange="renderAll()"> Кабели</label><label><input type="checkbox" id="layerLabels" onchange="renderAll()"> Подписи</label><label><input type="checkbox" id="layerPorts" checked onchange="renderAll()"> Порты</label><label><input type="checkbox" id="layerDims" checked onchange="renderAll()"> Размеры</label></div>
+<div class="stageOuter" id="stageOuter" ondragover="event.preventDefault()" ondrop="dropPreset(event)" oncontextmenu="openContextMenu(event)"><div class="stage" id="stage"><svg id="wires"></svg></div></div>
+<div class="command"><span style="font-size:12px;color:#cbd5e1">Команда</span><input id="cmd" placeholder="block, room, cable, delete, fit, demo, pdf..." onkeydown="runCommand(event)"><button onclick="executeCommand()">Enter</button></div>
+</main>
+<aside class="right" id="rightPanel"><div style="display:flex;justify-content:space-between;align-items:center"><div class="panelTitle">Инспектор / свойства</div><button onclick="toggleInspector()" style="padding:4px 8px">×</button></div><div id="inspector" style="margin-top:10px"></div></aside>
+<section class="bottom"><div class="tableHead"><strong>Кабельный журнал</strong><div><span class="badge" id="count">0 линий</span><button onclick="exportXLS()">Excel</button><button onclick="exportCSV()">CSV</button></div></div><div id="journal"></div></section>
+</div>
+
+<div class="contextMenu" id="contextMenu"><button onclick="openAddBlock();hideMenu()">Добавить блок</button><button onclick="addRoom();hideMenu()">Добавить помещение</button><button onclick="duplicateSelected();hideMenu()">Дублировать</button><button onclick="renameSelected();hideMenu()">Переименовать</button><button onclick="deleteSelected();hideMenu()">Удалить</button></div>
+
+<div class="modalBackdrop" id="blockModal"><div class="modal"><div class="modalHead"><strong>Добавить блок</strong><button onclick="closeAddBlock()">Закрыть</button></div><div class="modalBody"><div class="grid2" style="margin-bottom:10px"><input id="modalSearch" placeholder="Поиск..." oninput="renderPresetModal()"><select id="modalCat" onchange="renderPresetModal()"><option value="">Все категории</option><option>Сеть</option><option>Серверы</option><option>Видео</option><option>Управление</option><option>Аудио</option><option>Инфраструктура</option></select></div><div class="presetGrid" id="presetGrid"></div></div></div></div>
+
+<div class="modalBackdrop" id="sheetModal"><div class="modal"><div class="modalHead"><strong>Штамп листа</strong><button onclick="closeSheetEditor()">Закрыть</button></div><div class="modalBody"><div class="grid2"><div class="field"><label>Формат</label><select id="s_sheet" onchange="project.sheet=this.value;syncSheetEditor()"><option>A3</option><option>A2</option><option>A1</option></select></div><div class="field"><label>Лист №</label><input id="s_no" oninput="project.sheetNo=this.value;renderAll()"></div><div class="field"><label>Название</label><input id="s_title" oninput="project.sheetTitle=this.value;renderAll()"></div><div class="field"><label>Шифр</label><input id="s_code" oninput="project.sheetCode=this.value;renderAll()"></div><div class="field"><label>Раздел</label><input id="s_section" oninput="project.sheetSection=this.value;renderAll()"></div><div class="field"><label>Стадия</label><input id="s_stage" oninput="project.sheetStage=this.value;renderAll()"></div><div class="field"><label>Дата</label><input id="s_date" oninput="project.sheetDate=this.value;renderAll()"></div><div class="field"><label>Примечание</label><input id="s_note" oninput="project.sheetFontNote=this.value;renderAll()"></div></div></div></div></div>
+
+<script>
+const signalTypes=['LAN','WAN','HDBaseT','HDMI','DisplayPort','USB Control','KVM','Dante','Audio','Speaker','PoE','RS-232','IR','GPIO','Power','Reserve'];
+function port(num,name,iface,signal,cable,dir='out'){return{num:String(num),name,interface:iface,signal,cable,direction:dir}}
+const presets=[
+ {cat:'Сеть',type:'router',icon:'🌐',title:'Маршрутизатор',model:'TP-Link ER8411',prefix:'ER',w:280,h:380,ports:[port(1,'WAN SFP','SFP','WAN','FO patch','in'),port(2,'LAN SFP+','SFP+','LAN','FO patch','out'),...Array.from({length:8},(_,i)=>port(i+3,'LAN RJ-45 '+(i+1),'RJ-45','LAN','UTP Cat.6','out'))]},
+ {cat:'Сеть',type:'switch',icon:'🔀',title:'Коммутатор',model:'TP-Link SG3428XPP-M2',prefix:'SW',w:280,h:520,ports:[...Array.from({length:23},(_,i)=>port(i+1,'LAN RJ-45','RJ-45','LAN','UTP Cat.6','out')),port(24,'WAN RJ-45','RJ-45','WAN','UTP Cat.6','in'),port(28,'SFP+','SFP+','LAN','FO patch','in')]},
+ {cat:'Инфраструктура',type:'patch',icon:'▦',title:'Патч-панель Cat.5e',model:'24 порта Cat.5e',prefix:'PP',w:300,h:560,ports:Array.from({length:24},(_,i)=>port(i+1,'RJ-45/Krone','RJ-45','LAN','UTP Cat.5e','in'))},
+ {cat:'Инфраструктура',type:'patch',icon:'▦',title:'Патч-панель Cat.6a',model:'24 порта Cat.6a',prefix:'PP',w:300,h:560,ports:Array.from({length:24},(_,i)=>port(i+1,'RJ-45/Krone','RJ-45','HDBaseT','F/UTP Cat.6a','in'))},
+ {cat:'Серверы',type:'server',icon:'🖥',title:'Медиасервер',model:'Visuals 5060 / MSI Cubi',prefix:'MSR',w:280,h:380,ports:[port(1,'LAN','RJ-45','LAN','UTP Cat.6','in'),port(2,'HDMI OUT','HDMI','HDMI','HDMI','out'),port(3,'DP OUT','DP','DisplayPort','DisplayPort','out'),port(4,'USB Control','USB-A','USB Control','USB','out')]},
+ {cat:'Управление',type:'kvm',icon:'⌨',title:'KVM-адаптер',model:'ATEN KG8900T',prefix:'KVMA',w:280,h:360,ports:[port(1,'KVM RJ-45','RJ-45','KVM','UTP Cat.6','in'),port(2,'DP Video','DP','DisplayPort','DP','in'),port(3,'USB Control','USB-A','USB Control','USB','in')]},
+ {cat:'Видео',type:'hdmi',icon:'▶',title:'HDMI-удлинитель TX',model:'AVCLINK HT-4K120TX',prefix:'VTX',w:280,h:320,ports:[port(1,'HDMI IN','HDMI','HDMI','HDMI','in'),port(2,'HDBT OUT','RJ-45','HDBaseT','F/UTP Cat.6a','out')]},
+ {cat:'Видео',type:'hdmi',icon:'◀',title:'HDMI-удлинитель RX',model:'AVCLINK HT-4K120RX',prefix:'VRX',w:280,h:320,ports:[port(1,'HDBT IN','RJ-45','HDBaseT','F/UTP Cat.6a','in'),port(2,'HDMI OUT','HDMI','HDMI','HDMI','out')]},
+ {cat:'Видео',type:'display',icon:'▣',title:'Экран / панель',model:'Samsung / Lumien',prefix:'TV',w:280,h:330,ports:[port(1,'HDMI IN','HDMI','HDMI','HDMI','in'),port(2,'LAN','RJ-45','LAN','UTP Cat.6','in'),port(3,'USB Control','USB-A','USB Control','USB','in')]},
+ {cat:'Аудио',type:'amp',icon:'♫',title:'Усилитель мощности',model:'Audac EPA/SMQ',prefix:'AMP',w:280,h:360,ports:[port(1,'Dante/LAN','RJ-45','Dante','UTP Cat.6','in'),port(2,'Audio IN','RCA','Audio','Audio cable','in'),port(3,'Audio OUT 1','XLR','Speaker','Speaker cable','out'),port(4,'Audio OUT 2','XLR','Speaker','Speaker cable','out')]},
+ {cat:'Аудио',type:'speaker',icon:'🔊',title:'Акустическая система',model:'Audac / Ecler',prefix:'SPK',w:260,h:240,ports:[port(1,'Audio IN','XLR/Phoenix','Speaker','Speaker cable','in')]}
+];
+
+const project={pxPerM:50,reservePct:10,sheet:'A3',sheetNo:'1',sheetTitle:'Функциональная схема',sheetCode:'КЖ-СХ',sheetSection:'Кабельная схема',sheetStage:'КЖ',sheetDate:new Date().toLocaleDateString('ru-RU'),sheetFontNote:'ISOCPEUR 12'};
+let devices=[],rooms=[],cables=[],counters={},selected={type:null,id:null},pending=null,tool='select',zoom=.55,pan={x:20,y:20};
+function uid(){return crypto.randomUUID?crypto.randomUUID():String(Date.now()+Math.random())}
+function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]))}
+function attr(v){return esc(v).replace(/`/g,'&#96;')}
+function setStatus(t){status.textContent=t}
+function normalizeDevice(d){
+ d.code=d.code||`${d.prefix||'BLK'}-1`;
+ d.title=d.title||'Блок';
+ d.model=d.model||'';
+ d.unit=d.unit||'';
+ d.room=d.room||'';
+ d.rack=d.rack||'';
+ d.networkName=d.networkName||'';
+ d.specNo=d.specNo||'';
+ d.icon=d.icon||'□';
+ d.ports=(d.ports||[]).map(p=>({num:String(p.num??''),name:p.name||'',interface:p.interface||'',signal:p.signal||'LAN',cable:p.cable||'',direction:p.direction||'out'}));
+ d.w=Math.min(Math.max(+d.w||280,260),320);
+ const inCount=d.ports.filter(p=>p.direction==='in').length;
+ const outCount=d.ports.filter(p=>p.direction!=='in').length;
+ const maxSide=Math.max(1,inCount,outCount);
+ const minH=d.type==='patch'
+   ? Math.max(520, 160 + d.ports.length*22)
+   : Math.max(320, 160 + maxSide*22);
+ d.h=Math.max(+d.h||minH,minH);
+}
+function init(){
+ renderLibrary();
+ setTool('select');
+ renderAll();
+ setupPan();
+ setTimeout(fitView,50);
+}
+function renderLibrary(){const q=(search.value||'').toLowerCase(),c=cat.value;library.innerHTML=presets.filter(p=>(!c||p.cat===c)&&(`${p.title} ${p.model}`.toLowerCase().includes(q))).map(p=>`<div class="preset" draggable="true" ondragstart="dragPreset(event,'${p.prefix}','${p.title}')" ondblclick="addPresetCenter('${p.prefix}','${p.title}')"><strong>${p.icon} ${esc(p.title)}</strong><span>${esc(p.model)}</span><br><span class="badge">${p.cat}</span><span class="badge">${p.ports.length} порт.</span></div>`).join('')}
+function findPreset(prefix,title){return presets.find(p=>p.prefix===prefix&&p.title===title)||presets[0]}
+function dragPreset(e,p,t){e.dataTransfer.setData('prefix',p);e.dataTransfer.setData('title',t)}
+function world(e){const r=stageOuter.getBoundingClientRect();return{x:(e.clientX-r.left-pan.x)/zoom,y:(e.clientY-r.top-pan.y)/zoom}}
+function snap(v){return Math.round(v/20)*20}
+function dropPreset(e){const p=e.dataTransfer.getData('prefix'),t=e.dataTransfer.getData('title');if(!p)return;const pt=world(e);addDevice(findPreset(p,t),snap(pt.x),snap(pt.y))}
+function addPresetCenter(p,t){const r=stageOuter.getBoundingClientRect();addDevice(findPreset(p,t),snap((r.width/2-pan.x)/zoom),snap((r.height/2-pan.y)/zoom))}
+function nextCode(prefix){counters[prefix]=(counters[prefix]||0)+1;return prefix==='PP'?`PP.034/1/${counters[prefix]}`:`${prefix}-1-0-${counters[prefix]}`}
+function nextNet(type){const m={router:'RTR',switch:'SW',patch:'PP',server:'MSR',kvm:'KVM',hdmi:'VTX',display:'DISP',amp:'AMP',speaker:'SPK'},p=m[type]||'DEV';counters['net_'+p]=(counters['net_'+p]||0)+1;return `${p}-${counters['net_'+p]}`}
+function addDevice(p,x,y){const d=JSON.parse(JSON.stringify(p));d.id=uid();d.code=nextCode(d.prefix);d.x=x;d.y=y;d.networkName=nextNet(d.type);normalizeDevice(d);d.w=Math.min(Math.max(d.w||280,260),320);d.h=Math.max(d.h||320,190+Math.max(1,Math.max(d.ports.filter(p=>p.direction==='in').length,d.ports.filter(p=>p.direction!=='in').length))*22);devices.push(d);selected={type:'device',id:d.id};showInspector();renderAll()}
+function openAddBlock(){blockModal.style.display='flex';renderPresetModal()}function closeAddBlock(){blockModal.style.display='none'}
+function renderPresetModal(){const q=(modalSearch?.value||'').toLowerCase(),c=modalCat?.value||'';presetGrid.innerHTML=presets.filter(p=>(!c||p.cat===c)&&(`${p.title} ${p.model}`.toLowerCase().includes(q))).map(p=>`<div class="bigPreset" onclick="addPresetCenter('${p.prefix}','${p.title}');closeAddBlock()"><strong>${p.icon} ${esc(p.title)}</strong><p>${esc(p.model)}</p><span class="badge">${p.cat}</span><span class="badge">${p.ports.length} портов</span></div>`).join('')}
+function setTool(t){tool=t;[tool_select,tool_connect,tool_pan].forEach(b=>b.style.background='');document.getElementById('tool_'+t).style.background='#dbeafe';pending=null;renderPorts()}
+function zoomBy(k){zoom=Math.max(.2,Math.min(2.5,zoom*k));applyTransform()}function fitView(){
+ const r=stageOuter.getBoundingClientRect();
+ const s=sheetSize();
+ const margin=36;
+ const zx=(r.width-margin*2)/s.w;
+ const zy=(r.height-margin*2)/s.h;
+ zoom=Math.max(.18,Math.min(1.15,Math.min(zx,zy)));
+ pan={x:margin,y:margin};
+ applyTransform();
+}
+function applyTransform(){stage.style.transform=`translate(${pan.x}px,${pan.y}px) scale(${zoom})`;zoomLabel.textContent=Math.round(zoom*100)+'%'}
+function setupPan(){let down=false,sx=0,sy=0,op;stageOuter.addEventListener('mousedown',e=>{if(tool!=='pan'&&!e.altKey&&e.button!==1)return;if(e.target.closest('.device,.room,.portDot'))return;down=true;sx=e.clientX;sy=e.clientY;op={...pan};stageOuter.classList.add('panning')});window.addEventListener('mousemove',e=>{if(!down)return;pan.x=op.x+e.clientX-sx;pan.y=op.y+e.clientY-sy;applyTransform()});window.addEventListener('mouseup',()=>{down=false;stageOuter.classList.remove('panning')});stageOuter.addEventListener('wheel',e=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();zoomBy(e.deltaY<0?1.1:.9)},{passive:false})}
+function renderAll(){renderStage();renderInspector();renderJournal()}
+function renderWithoutInspector(){renderStage();renderJournal()}
+function renderStage(){stage.querySelectorAll('.sheet,.room,.device,.portDot').forEach(e=>e.remove());renderSheet();if(layerRooms.checked)rooms.forEach(r=>stage.appendChild(roomEl(r)));devices.forEach(d=>stage.appendChild(deviceEl(d)));renderWires();renderPorts()}
+function sheetSize(){if(project.sheet==='A1')return{w:4200,h:2970};if(project.sheet==='A2')return{w:2970,h:2100};return{w:2100,h:1485}}
+function renderSheet(){if(!layerSheet.checked)return;const s=sheetSize(),el=document.createElement('div');el.className='sheet';el.style.width=s.w+'px';el.style.height=s.h+'px';el.innerHTML=`<div class="titleBlock"><div>Изм.</div><div class="editable big" onclick="editProject('sheetTitle','Название')">${esc(project.sheetTitle)}</div><div class="editable" onclick="editProject('sheetNo','Лист')">Лист ${esc(project.sheetNo)}</div><div>Разраб.</div><div class="editable" onclick="editProject('sheetCode','Шифр')">${esc(project.sheetCode)}</div><div class="editable" onclick="editProject('sheet','Формат')">${esc(project.sheet)}</div><div>Пров.</div><div class="editable" onclick="editProject('sheetSection','Раздел')">${esc(project.sheetSection)}</div><div class="editable" onclick="editProject('sheetFontNote','Шрифт')">${esc(project.sheetFontNote)}</div><div>Дата</div><div class="editable" onclick="editProject('sheetDate','Дата')">${esc(project.sheetDate)}</div><div class="editable" onclick="editProject('sheetStage','Стадия')">${esc(project.sheetStage)}</div></div>`;stage.appendChild(el)}
+function editProject(k,l){const v=prompt(l,project[k]||'');if(v!==null){project[k]=v;renderAll()}}
+function addRoom(){const n=rooms.length+1;rooms.push({id:uid(),name:'Помещение '+n,roomNo:'0.4.'+(30+n),x:100+n*30,y:100+n*30,w:600,h:360,wM:12,hM:7});selected={type:'room',id:rooms.at(-1).id};renderAll()}
+function roomEl(r){const el=document.createElement('div');el.className='room'+(selected.type==='room'&&selected.id===r.id?' selected':'');el.style.left=r.x+'px';el.style.top=r.y+'px';el.style.width=r.w+'px';el.style.height=r.h+'px';el.innerHTML=`<div class="roomLabel">${esc(r.roomNo)} — ${esc(r.name)}</div>${layerDims.checked?`<div class="dimH">${(r.w/project.pxPerM).toFixed(1)} м</div><div class="dimV">${(r.h/project.pxPerM).toFixed(1)} м</div>`:''}<div class="delete">×</div><div class="handle"></div>`;el.querySelector('.roomLabel').ondblclick=e=>{e.stopPropagation();const v=prompt('Название помещения',r.name);if(v!==null){r.name=v;renderAll()}};el.querySelector('.delete').onclick=e=>{e.stopPropagation();selected={type:'room',id:r.id};deleteSelected()};el.querySelector('.handle').onmousedown=e=>{e.stopPropagation();selected={type:'room',id:r.id};resizeObj(e,r,'room')};el.onmousedown=e=>{if(e.target.classList.contains('handle')||e.target.classList.contains('delete'))return;selected={type:'room',id:r.id};dragObj(e,r)};return el}
+function deviceEl(d){
+ normalizeDevice(d);
+ const isPatch=d.type==='patch';
+ const el=document.createElement('div');
+ el.className=`device ${d.type}${selected.type==='device'&&selected.id===d.id?' selected':''}`;
+ el.style.left=d.x+'px';
+ el.style.top=d.y+'px';
+ el.style.width=d.w+'px';
+ el.style.height=d.h+'px';
+
+ const inPorts=d.ports.map((p,i)=>({p,i})).filter(x=>x.p.direction==='in');
+ const outPorts=d.ports.map((p,i)=>({p,i})).filter(x=>x.p.direction!=='in');
+ const used=d.ports.filter((p,i)=>isPortUsed(d.id,i)).length;
+
+ el.innerHTML=`
+  <div class="devTag">Пом. ${esc(d.room||'—')} · ${esc(d.code)}</div>
+  <div class="devHead">
+    <div class="devIcon">${d.icon||'□'}</div>
+    <div style="min-width:0;flex:1">
+      <div class="devTitle">${esc(d.title)}</div>
+      <div class="devModel">${esc(d.model)}</div>
+    </div>
+  </div>
+  <div class="metaGrid">
+    <div class="metaItem">Спец.: ${esc(d.specNo||'—')}</div>
+    <div class="metaItem">Unit: ${esc(d.unit||'—')}</div>
+    <div class="metaItem">Сеть: ${esc(d.networkName||'—')}</div>
+    <div class="metaItem">Шкаф: ${esc(d.rack||'—')}</div>
+    <div class="metaItem">Порты: ${used}/${d.ports.length}</div>
+    <div class="metaItem">Помещение: ${esc(d.room||'—')}</div>
+  </div>
+  ${isPatch?patchHtml(d):ordinaryPortsHtml(inPorts,outPorts,d)}
+  <div class="delete">×</div>
+  <div class="handle"></div>`;
+
+ el.querySelector('.devHead').onmousedown=e=>{e.stopPropagation();selected={type:'device',id:d.id};showInspector();dragObj(e,d)};
+ el.querySelector('.delete').onclick=e=>{e.stopPropagation();selected={type:'device',id:d.id};deleteSelected()};
+ el.querySelector('.handle').onmousedown=e=>{e.stopPropagation();selected={type:'device',id:d.id};resizeObj(e,d,'device')};
+ el.ondblclick=e=>{e.stopPropagation();selected={type:'device',id:d.id};showInspector();renderAll();setTimeout(()=>document.querySelector('#inspector input')?.focus(),50)};
+ el.onmousedown=e=>{if(e.target.closest('.delete,.handle'))return;selected={type:'device',id:d.id};showInspector();renderAll()};
+ return el;
+}
+function patchHtml(d){
+ return `<div class="portsWrapPatch">
+   <div class="portsCol2"><div class="portsLabel2">Krone</div><div class="portsStack2">${d.ports.map((p,i)=>`<div class="portBox2 ${isPortUsed(d.id,i)?'used in':''}" title="Krone ${esc(p.num)}">${esc(p.num)}</div>`).join('')}</div></div>
+   <div class="portsCol2"><div class="portsLabel2">RJ-45</div><div class="portsStack2">${d.ports.map((p,i)=>`<div class="portBox2 ${isPortUsed(d.id,i)?'used out':''}" title="RJ-45 ${esc(p.num)}">${esc(p.num)}</div>`).join('')}</div></div>
+ </div>`;
+}
+function ordinaryPortsHtml(ins,outs,d){
+ const left=ins.map(({p,i})=>`<div class="portBox2 ${isPortUsed(d.id,i)?'used in':''}" title="${esc(p.signal)} · ${esc(p.name)}">${esc(p.num)}</div>`).join('')||'<div class="portBox2">—</div>';
+ const right=outs.map(({p,i})=>`<div class="portBox2 ${isPortUsed(d.id,i)?'used out':''}" title="${esc(p.signal)} · ${esc(p.name)}">${esc(p.num)}</div>`).join('')||'<div class="portBox2">—</div>';
+ return `<div class="portsWrap2">
+   <div class="portsCol2"><div class="portsLabel2">Вход</div><div class="portsStack2">${left}</div></div>
+   <div class="portsFill2"></div>
+   <div class="portsCol2"><div class="portsLabel2">Выход</div><div class="portsStack2">${right}</div></div>
+ </div>`;
+}
+function dragObj(e,o){const sx=e.clientX,sy=e.clientY,ox=o.x,oy=o.y;function mv(a){o.x=snap(ox+(a.clientX-sx)/zoom);o.y=snap(oy+(a.clientY-sy)/zoom);renderStage();renderJournal()}function up(){window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);renderAll()}window.addEventListener('mousemove',mv);window.addEventListener('mouseup',up)}
+function resizeObj(e,o,type){const sx=e.clientX,sy=e.clientY,ow=o.w,oh=o.h;function mv(a){o.w=snap(Math.max(type==='room'?160:260,ow+(a.clientX-sx)/zoom));o.h=snap(Math.max(type==='room'?120:160,oh+(a.clientY-sy)/zoom));if(type==='room'){o.wM=+(o.w/project.pxPerM).toFixed(1);o.hM=+(o.h/project.pxPerM).toFixed(1)}renderStage();renderJournal()}function up(){window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);renderAll()}window.addEventListener('mousemove',mv);window.addEventListener('mouseup',up)}
+function portCenter(did,pi){
+ const d=devices.find(x=>x.id===did),p=d.ports[pi];
+ if(d.type==='patch'){
+  const y=d.y+160+12+4 + pi*22 + 9;
+  return {x:p.direction==='out'?d.x+d.w+6:d.x-6,y};
+ }
+ const list=d.ports.map((pp,i)=>({pp,i})).filter(x=>p.direction==='in'?x.pp.direction==='in':x.pp.direction!=='in');
+ const idx=Math.max(0,list.findIndex(x=>x.i===pi));
+ const y=d.y+160+12+4 + idx*22 + 9;
+ return {x:p.direction==='in'?d.x-6:d.x+d.w+6,y};
+}
+function renderPorts(){stage.querySelectorAll('.portDot').forEach(e=>e.remove());if(!layerPorts.checked)return;devices.forEach(d=>d.ports.forEach((p,i)=>{const c=portCenter(d.id,i),dot=document.createElement('div');dot.className=`portDot ${p.direction==='in'?'in':'out'}${isPortUsed(d.id,i)?' used':''}${pending&&pending.did===d.id&&pending.pi===i?' active':''}`;dot.style.left=(c.x-6)+'px';dot.style.top=(c.y-6)+'px';dot.dataset.tip=`${d.code}: ${p.direction==='in'?'IN':'OUT'} ${p.num} ${p.name} (${p.signal})`;dot.onclick=e=>{e.stopPropagation();clickPort(d.id,i)};stage.appendChild(dot)}))}
+function clickPort(did,pi){if(tool!=='connect')setTool('connect');if(!pending){pending={did,pi};renderPorts();return}if(pending.did===did&&pending.pi===pi){pending=null;renderPorts();return}createCable(pending.did,pending.pi,did,pi);pending=null;renderAll()}
+function createCable(fd,fp,td,tp){const a=devices.find(d=>d.id===fd).ports[fp],b=devices.find(d=>d.id===td).ports[tp],signal=chooseSignal(a.signal,b.signal);const c={id:uid(),mark:nextCableMark(signal),fromDeviceId:fd,fromPortIndex:fp,toDeviceId:td,toPortIndex:tp,signal,cable:chooseCable(a,b),lengthM:calcLength(fd,fp,td,tp),routeGofra:'',routeChannel:'',routeTray:'',routeOpen:'',note:''};cables.push(c);selected={type:'cable',id:c.id}}
+function chooseSignal(a,b){if(a===b)return a;for(const s of ['HDBaseT','HDMI','DisplayPort','USB Control','KVM','Dante','Audio','Speaker','PoE','LAN','WAN'])if((a+' '+b).includes(s))return s;return 'LAN'}
+function chooseCable(a,b){if(a.signal==='HDBaseT'||b.signal==='HDBaseT')return'F/UTP Cat.6a';if(a.signal==='HDMI'||b.signal==='HDMI')return'HDMI';if(a.signal==='DisplayPort'||b.signal==='DisplayPort')return'DisplayPort';if(a.signal.includes('USB')||b.signal.includes('USB'))return'USB';if(a.signal.includes('Audio')||b.signal.includes('Audio')||a.signal.includes('Speaker')||b.signal.includes('Speaker'))return'Аудио/акустический кабель';return'UTP/F-UTP Cat.6'}
+function nextCableMark(s){const p=s==='HDMI'||s==='DisplayPort'||s==='HDBaseT'?'VD':s.includes('Audio')||s==='Speaker'?'AU':s.includes('USB')?'CC':s==='KVM'?'TM':s==='Dante'?'AD':'TL';counters['c_'+p]=(counters['c_'+p]||0)+1;return`${p}.34/1-${counters['c_'+p]}`}
+function calcLength(fd,fp,td,tp){const a=portCenter(fd,fp),b=portCenter(td,tp);return Math.ceil((Math.abs(a.x-b.x)+Math.abs(a.y-b.y))/project.pxPerM*(1+project.reservePct/100))}
+function isPortUsed(did,pi){return cables.some(c=>(c.fromDeviceId===did&&c.fromPortIndex===pi)||(c.toDeviceId===did&&c.toPortIndex===pi))}
+function renderWires(){wires.innerHTML='';if(!layerCables.checked)return;cables.forEach((c,idx)=>{const a=portCenter(c.fromDeviceId,c.fromPortIndex),b=portCenter(c.toDeviceId,c.toPortIndex),dir=a.x<=b.x?1:-1,stub=40+(idx%6)*6,x1=a.x+dir*stub,x2=b.x-dir*stub,mid=(x1+x2)/2;const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',`M${a.x},${a.y} L${x1},${a.y} L${mid},${a.y} L${mid},${b.y} L${x2},${b.y} L${b.x},${b.y}`);path.setAttribute('class','wire'+(selected.type==='cable'&&selected.id===c.id?' selected':''));wires.appendChild(path);if(layerLabels.checked||selected.id===c.id){const t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('x',mid+4);t.setAttribute('y',(a.y+b.y)/2-4);t.setAttribute('class','wireLabel');t.textContent=c.mark;wires.appendChild(t)}})}
+function endpointOptions(deviceId,portIndex){
+ let html='';
+ devices.forEach(d=>{
+  normalizeDevice(d);
+  d.ports.forEach((p,i)=>{
+   const selectedAttr=(d.id===deviceId&&i===portIndex)?' selected':'';
+   html+=`<option value="${d.id}|${i}"${selectedAttr}>${esc(d.code)} — ${esc(p.direction==='in'?'IN':'OUT')} ${esc(p.num)} ${esc(p.name)}</option>`;
+  });
+ });
+ return html;
+}
+function endpointSelect(c,side){
+ const did=side==='from'?c.fromDeviceId:c.toDeviceId;
+ const pi=side==='from'?c.fromPortIndex:c.toPortIndex;
+ return `<select onchange="changeCableEndpoint('${c.id}','${side}',this.value)">${endpointOptions(did,pi)}</select>`;
+}
+function changeCableEndpoint(id,side,value){
+ const c=cables.find(x=>x.id===id); if(!c)return;
+ const [did,pi]=value.split('|');
+ if(side==='from'){c.fromDeviceId=did;c.fromPortIndex=+pi}else{c.toDeviceId=did;c.toPortIndex=+pi}
+ c.lengthM=calcLength(c.fromDeviceId,c.fromPortIndex,c.toDeviceId,c.toPortIndex);
+ renderAll();
+}
+function renderInspector(){
+ const box=inspector;
+ if(selected.type==='device'){
+  const d=devices.find(x=>x.id===selected.id);
+  if(!d){box.innerHTML='';return}
+  normalizeDevice(d);
+  box.innerHTML=`<div class="card"><strong>${esc(d.code)}</strong><br><span class="badge">${esc(d.title)}</span><span class="badge">${d.ports.length} выводов</span></div>
+  <div class="hint">Вносите свои данные блока прямо в полях ниже: № спецификации, Unit, помещение, шкаф, сетевое имя. Входы отображаются слева, выходы справа. Отдельные порты можно удалять кнопкой × в строке порта. В выпадающем списке порта выбирается тип сигнала: HDBaseT, LAN, HDMI и т.д.</div>
+  <div class="grid2">${field('code','Обозначение',d.code)}${field('specNo','№ по спецификации',d.specNo)}${field('title','Наименование',d.title)}${field('model','Модель',d.model)}${field('unit','Unit',d.unit)}${field('room','№ помещения',d.room)}${field('rack','Шкаф / стойка',d.rack)}${field('networkName','Наименование в сети',d.networkName)}${field('w','Ширина px',d.w)}${field('h','Высота px',d.h)}</div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap"><button onclick="assignNet()">Счётчик имени</button><button onclick="addPort('in')">+ Вход</button><button onclick="addPort('out')">+ Выход</button><button onclick="setPortCount()">Количество</button><button class="danger" onclick="deleteSelected()">Удалить блок</button></div>
+  <hr><div class="panelTitle">Порты / выводы</div>${portEditor(d)}`;
+ } else if(selected.type==='room'){
+  const r=rooms.find(x=>x.id===selected.id);
+  if(!r){box.innerHTML='';return}
+  box.innerHTML=`<div class="card"><strong>${esc(r.roomNo)} — ${esc(r.name)}</strong></div><div class="grid2">${field('name','Название',r.name)}${field('roomNo','Номер',r.roomNo)}${field('wM','Ширина м',r.wM)}${field('hM','Глубина м',r.hM)}${field('w','Ширина px',r.w)}${field('h','Глубина px',r.h)}</div><button class="danger" onclick="deleteSelected()">Удалить помещение</button>`;
+ } else if(selected.type==='cable'){
+  const c=cables.find(x=>x.id===selected.id);
+  if(!c){box.innerHTML='';return}
+  c.routeGofra=c.routeGofra||'';c.routeChannel=c.routeChannel||'';c.routeTray=c.routeTray||'';c.routeOpen=c.routeOpen||'';
+  box.innerHTML=`<div class="card"><strong>${esc(c.mark)}</strong><br><span class="badge">${esc(c.signal)}</span><span class="badge">${esc(c.lengthM)} м</span></div>
+  ${field('mark','Маркировка',c.mark)}
+  <div class="field"><label>Тип сигнала</label>${signalSelect(c.signal,`updateCable('${c.id}','signal',this.value)`)}</div>
+  ${field('cable','Тип кабеля',c.cable)}
+  <div class="cableGrid"><div class="field"><label>Откуда</label>${endpointSelect(c,'from')}</div><div class="field"><label>Куда</label>${endpointSelect(c,'to')}</div></div>
+  ${field('lengthM','Длина общая, м',c.lengthM)}
+  <div class="cableRouteGrid">${field('routeGofra','В гофре, м',c.routeGofra)}${field('routeChannel','В кабель-канале, м',c.routeChannel)}${field('routeTray','В лотке, м',c.routeTray)}${field('routeOpen','Открыто, м',c.routeOpen)}</div>
+  ${field('note','Примечание',c.note)}
+  <button onclick="recalcCable()">Пересчитать длину</button> <button class="danger" onclick="deleteSelected()">Удалить кабель</button>`;
+ } else {
+  box.innerHTML='<div class="hint">Выберите блок, помещение или кабель. Блоки двигаются за шапку. Размер меняется синим углом. Для кабеля выберите режим «Кабель» и нажмите два порта.</div>';
+ }
+}
+function field(k,l,v){return`<div class="field"><label>${l}</label><input value="${attr(v)}" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" oninput="updateSelected('${k}',this.value)"></div>`}
+function signalSelect(v,js){return`<select onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" onchange="${js}">${signalTypes.map(s=>`<option value="${s}" ${v===s?'selected':''}>${s}</option>`).join('')}</select>`}
+function portEditor(d){
+ return`<div class="portEditHead"><div>№</div><div>IN/OUT</div><div>Название</div><div>Интерфейс</div><div>Сигнал</div><div>Кабель</div><div></div></div>`+
+ d.ports.map((p,i)=>`<div class="portEditRow">
+  <input class="${isPortUsed(d.id,i)?'busy':''}" value="${attr(p.num)}" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" oninput="updatePort('${d.id}',${i},'num',this.value)">
+  <select onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" onchange="updatePort('${d.id}',${i},'direction',this.value)"><option value="in" ${p.direction==='in'?'selected':''}>Вход</option><option value="out" ${p.direction!=='in'?'selected':''}>Выход</option></select>
+  <input value="${attr(p.name)}" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" oninput="updatePort('${d.id}',${i},'name',this.value)">
+  <input value="${attr(p.interface)}" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" oninput="updatePort('${d.id}',${i},'interface',this.value)">
+  ${signalSelect(p.signal,`updatePort('${d.id}',${i},'signal',this.value)`)}
+  <input value="${attr(p.cable)}" onmousedown="event.stopPropagation()" onclick="event.stopPropagation()" oninput="updatePort('${d.id}',${i},'cable',this.value)">
+  <button class="danger" title="Удалить порт" onclick="deletePort('${d.id}',${i})">×</button>
+ </div>`).join('')
+}
+function updateSelected(k,v){
+ if(selected.type==='device'){
+  const d=devices.find(x=>x.id===selected.id); if(!d)return;
+  d[k]=(k==='w'||k==='h')?(+v||d[k]):v;
+ }else if(selected.type==='room'){
+  const r=rooms.find(x=>x.id===selected.id); if(!r)return;
+  if(['w','h'].includes(k)){r[k]=+v||r[k];r.wM=+(r.w/project.pxPerM).toFixed(1);r.hM=+(r.h/project.pxPerM).toFixed(1)}
+  else if(['wM','hM'].includes(k)){r[k]=+v||r[k];r.w=r.wM*project.pxPerM;r.h=r.hM*project.pxPerM}
+  else r[k]=v;
+ }else if(selected.type==='cable'){
+  const c=cables.find(x=>x.id===selected.id); if(!c)return;
+  c[k]=k==='lengthM'?+v||0:v;
+ }
+ renderWithoutInspector();
+}
+function updateCable(id,k,v){
+ const c=cables.find(x=>x.id===id); if(!c)return;
+ c[k]=v;
+ renderWithoutInspector();
+}
+function updatePort(did,i,k,v){
+ const d=devices.find(x=>x.id===did); if(!d||!d.ports[i])return;
+ d.ports[i][k]=v;
+ renderWithoutInspector();
+}
+function addPort(dir='out'){if(selected.type!=='device')return;const d=devices.find(x=>x.id===selected.id),n=d.ports.length+1;d.ports.push(port(n,(dir==='in'?'Вход ':'Выход ')+n,'RJ-45','LAN','UTP Cat.6',dir));d.h=Math.max(d.h,160+d.ports.length*18);renderAll()}
+function deletePort(did,i){const d=devices.find(x=>x.id===did);if(isPortUsed(did,i)){alert('Этот порт занят кабелем. Сначала удалите кабель.');return}d.ports.splice(i,1);cables.forEach(c=>{if(c.fromDeviceId===did&&c.fromPortIndex>i)c.fromPortIndex--;if(c.toDeviceId===did&&c.toPortIndex>i)c.toPortIndex--});renderAll();setStatus('Порт удалён')}
+function setPortCount(){if(selected.type!=='device')return;const d=devices.find(x=>x.id===selected.id),cur=d.ports.length,n=+(prompt('Количество портов',cur)||cur);if(n<cur){for(let i=n;i<cur;i++)if(isPortUsed(d.id,i)){alert('Нельзя уменьшить: есть занятые порты.');return}d.ports=d.ports.slice(0,n)}else for(let i=cur;i<n;i++)d.ports.push(port(i+1,'Порт '+(i+1),'RJ-45','LAN','UTP Cat.6','out'));renderAll()}
+function assignNet(){if(selected.type!=='device')return;const d=devices.find(x=>x.id===selected.id);d.networkName=nextNet(d.type);renderAll()}
+function recalcCable(){if(selected.type!=='cable')return;const c=cables.find(x=>x.id===selected.id);c.lengthM=calcLength(c.fromDeviceId,c.fromPortIndex,c.toDeviceId,c.toPortIndex);renderAll()}
+function renderJournal(){
+ count.textContent=cables.length+' линий';
+ journal.innerHTML=`<table><thead><tr><th>№</th><th>Маркировка</th><th>Тип кабеля</th><th>Пом.</th><th>Откуда</th><th>Порт</th><th>Пом.</th><th>Куда</th><th>Порт</th><th>Сигнал</th><th>Гофра</th><th>Канал</th><th>Лоток</th><th>Откр.</th><th>Длина</th><th>Примеч.</th></tr></thead><tbody>${
+ cables.map((c,i)=>{
+  const fd=devices.find(d=>d.id===c.fromDeviceId),td=devices.find(d=>d.id===c.toDeviceId),fp=fd?.ports[c.fromPortIndex],tp=td?.ports[c.toPortIndex];
+  return`<tr onclick="selected={type:'cable',id:'${c.id}'};showInspector();renderAll()"><td>${i+1}</td><td>${esc(c.mark)}</td><td>${esc(c.cable)}</td><td>${esc(fd?.room||'')}</td><td>${esc(fd?.code||'')}</td><td>${esc(fp?.num||'')} ${esc(fp?.name||'')}</td><td>${esc(td?.room||'')}</td><td>${esc(td?.code||'')}</td><td>${esc(tp?.num||'')} ${esc(tp?.name||'')}</td><td>${esc(c.signal)}</td><td>${esc(c.routeGofra||'')}</td><td>${esc(c.routeChannel||'')}</td><td>${esc(c.routeTray||'')}</td><td>${esc(c.routeOpen||'')}</td><td>${esc(c.lengthM)}</td><td>${esc(c.note)}</td></tr>`;
+ }).join('')}</tbody></table>`;
+}
+function deleteSelected(){if(!selected.type){alert('Ничего не выбрано');return}if(selected.type==='device'){devices=devices.filter(d=>d.id!==selected.id);cables=cables.filter(c=>c.fromDeviceId!==selected.id&&c.toDeviceId!==selected.id)}else if(selected.type==='room'){rooms=rooms.filter(r=>r.id!==selected.id)}else if(selected.type==='cable'){cables=cables.filter(c=>c.id!==selected.id)}selected={type:null,id:null};renderAll()}
+function duplicateSelected(){if(selected.type==='device'){const d=devices.find(x=>x.id===selected.id),c=JSON.parse(JSON.stringify(d));c.id=uid();c.x+=40;c.y+=40;c.code=nextCode(c.prefix||'DEV');devices.push(c);selected={type:'device',id:c.id};renderAll()}else if(selected.type==='room'){const r=rooms.find(x=>x.id===selected.id),c=JSON.parse(JSON.stringify(r));c.id=uid();c.x+=40;c.y+=40;c.name+=' копия';rooms.push(c);selected={type:'room',id:c.id};renderAll()}}
+function renameSelected(){if(selected.type==='device'){const d=devices.find(x=>x.id===selected.id),v=prompt('Обозначение',d.code);if(v!==null){d.code=v;renderAll()}}else if(selected.type==='room'){const r=rooms.find(x=>x.id===selected.id),v=prompt('Название помещения',r.name);if(v!==null){r.name=v;renderAll()}}}
+function openContextMenu(e){e.preventDefault();contextMenu.style.display='block';contextMenu.style.left=e.clientX+'px';contextMenu.style.top=e.clientY+'px'}function hideMenu(){contextMenu.style.display='none'}window.addEventListener('click',hideMenu)
+function saveLocal(){localStorage.setItem('cablecad_stable',JSON.stringify({project,devices,rooms,cables,counters}));setStatus('Сохранено')}function loadLocal(){const s=localStorage.getItem('cablecad_stable');if(!s){alert('Нет сохранения');return}const d=JSON.parse(s);Object.assign(project,d.project||{});devices=d.devices||[];rooms=d.rooms||[];cables=d.cables||[];counters=d.counters||{};devices.forEach(normalizeDevice);sheetFormat.value=project.sheet;renderAll();setStatus('Загружено')}
+function exportJSON(){
+ const data=JSON.stringify({project,rooms,devices,cables,counters},null,2);
+ download(data,'cablecad_project.json','application/json;charset=utf-8');
+}
+function importJSONFile(e){
+ const file=e.target.files&&e.target.files[0]; if(!file)return;
+ const reader=new FileReader();
+ reader.onload=()=>{
+  try{
+   const data=JSON.parse(reader.result);
+   Object.assign(project,data.project||{});
+   rooms=data.rooms||[];
+   devices=data.devices||[];
+   cables=data.cables||[];
+   counters=data.counters||{};
+   devices.forEach(normalizeDevice);
+   sheetFormat.value=project.sheet||'A3';
+   selected={type:null,id:null}; pending=null;
+   renderAll(); setTimeout(fitView,50); setStatus('JSON импортирован');
+  }catch(err){alert('Ошибка импорта JSON: '+err.message)}
+ };
+ reader.readAsText(file);
+ e.target.value='';
+}
+function exportCSV(){
+ const rows=cables.map((c,i)=>{
+  const fd=devices.find(d=>d.id===c.fromDeviceId),td=devices.find(d=>d.id===c.toDeviceId),fp=fd?.ports[c.fromPortIndex],tp=td?.ports[c.toPortIndex];
+  return [i+1,c.mark,c.cable,fd?.room||'',fd?.code||'',`${fp?.num||''} ${fp?.name||''}`,td?.room||'',td?.code||'',`${tp?.num||''} ${tp?.name||''}`,c.signal,c.routeGofra||'',c.routeChannel||'',c.routeTray||'',c.routeOpen||'',c.lengthM,c.note];
+ });
+ download('\ufeff'+[['№','Маркировка','Тип кабеля','Пом. начало','Оборудование начало','Порт начало','Пом. конец','Оборудование конец','Порт конец','Сигнал','В гофре','В кабель-канале','В лотке','Открыто','Длина общая','Примеч.'],...rows].map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(';')).join('\n'),'cable_journal.csv','text/csv');
+}
+function exportXLS(){
+ const generated=new Date().toLocaleString('ru-RU');
+ const rows=cables.map((c,i)=>{
+   const fd=devices.find(d=>d.id===c.fromDeviceId), td=devices.find(d=>d.id===c.toDeviceId);
+   const fp=fd?.ports[c.fromPortIndex], tp=td?.ports[c.toPortIndex];
+   return {
+    n:i+1,
+    mark:c.mark||'',
+    cable:c.cable||'',
+    sRoom:fd?.room||'',
+    sEquip:`${fd?.title||''} ${fd?.model||''} "${fd?.code||''}"${fd?.unit?' Unit '+fd.unit:''}${fd?.specNo?' Спец.: '+fd.specNo:''}`,
+    sPort:`${fp?.num||''} ${fp?.name||''}`,
+    eRoom:td?.room||'',
+    eEquip:`${td?.title||''} ${td?.model||''} "${td?.code||''}"${td?.unit?' Unit '+td.unit:''}${td?.specNo?' Спец.: '+td.specNo:''}`,
+    ePort:`${tp?.num||''} ${tp?.name||''}`,
+    gofra:c.routeGofra||'',
+    channel:c.routeChannel||'',
+    tray:c.routeTray||'',
+    open:c.routeOpen||'',
+    total:c.lengthM||'',
+    note:c.note||''
+   }
+ });
+ const body=rows.map(r=>`<tr>
+  <td class="num">${xlsEsc(r.n)}</td><td>${xlsEsc(r.mark)}</td><td>${xlsEsc(r.cable)}</td>
+  <td class="num">${xlsEsc(r.sRoom)}</td><td class="wrap">${xlsEsc(r.sEquip)}</td><td class="wrap">${xlsEsc(r.sPort)}</td>
+  <td class="num">${xlsEsc(r.eRoom)}</td><td class="wrap">${xlsEsc(r.eEquip)}</td><td class="wrap">${xlsEsc(r.ePort)}</td>
+  <td class="num">${xlsEsc(r.gofra)}</td><td class="num">${xlsEsc(r.channel)}</td><td class="num">${xlsEsc(r.tray)}</td><td class="num">${xlsEsc(r.open)}</td>
+  <td class="num">${xlsEsc(r.total)}</td><td class="wrap">${xlsEsc(r.note)}</td>
+ </tr>`).join('');
+ const html=`<!doctype html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+ <head><meta charset="utf-8">
+ <style>
+ @page{mso-page-orientation:landscape;margin:.5in}
+ body,table{font-family:ISOCPEUR,Arial,sans-serif;font-size:12pt;font-style:italic}
+ table{border-collapse:collapse}
+ td,th{border:.5pt solid #000;padding:4px 6px;vertical-align:middle;mso-number-format:"\\@"}
+ .title{font-size:14pt;font-weight:bold;text-align:center}
+ .meta{font-size:10pt}
+ .head{font-weight:bold;text-align:center;background:#f2f2f2}
+ .sub{text-align:center;background:#f7f7f7}
+ .num{text-align:center}.wrap{white-space:normal}
+ 
+/* FINAL OVERRIDE: neat compact vertical engineering blocks */
+.device{
+  overflow:visible!important;
+  background:#fff!important;
+}
+.device .devHead{
+  height:68px!important;
+}
+.device .devMeta{
+  left:12px!important;
+  right:12px!important;
+  top:78px!important;
+  grid-template-columns:1fr 1fr!important;
+}
+.device .deviceCenterTitle{
+  top:170px!important;
+  left:70px!important;
+  right:70px!important;
+  bottom:16px!important;
+  color:#94a3b8!important;
+}
+.device .sidePorts{
+  top:170px!important;
+  bottom:18px!important;
+  width:44px!important;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  border-radius:0!important;
+  padding:0!important;
+  display:flex!important;
+  flex-direction:column!important;
+  gap:4px!important;
+  z-index:2!important;
+}
+.device .sidePorts.left{left:12px!important;right:auto!important}
+.device .sidePorts.right{right:12px!important;left:auto!important}
+.device .sideTitle{top:150px!important}
+.device .sideTitle.left{left:12px!important}
+.device .sideTitle.right{right:12px!important}
+.device .portBox{
+  width:100%!important;
+  min-width:0!important;
+  max-width:44px!important;
+  height:auto!important;
+  min-height:16px!important;
+  border-radius:4px!important;
+  box-shadow:none!important;
+  background:#fff!important;
+  padding:0!important;
+}
+.device .patchRows{
+  top:150px!important;
+  bottom:16px!important;
+  left:12px!important;
+  right:12px!important;
+  background:transparent!important;
+  border:0!important;
+  box-shadow:none!important;
+  padding:0!important;
+}
+.device .patchCol{min-width:0!important}
+.device .delete{z-index:30!important}
+.device .handle{z-index:30!important}
+
+
+/* COMPACT LAYOUT FIX: keep everything in one block, no overlaps */
+.device .devMeta{
+  display:grid!important;
+  grid-template-columns:1fr 1fr!important;
+  gap:4px!important;
+}
+.device .sidePorts{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch!important;
+  justify-content:flex-start!important;
+  gap:4px!important;
+}
+.device .portBox{
+  flex:none!important;
+  height:18px!important;
+  min-height:18px!important;
+  line-height:18px!important;
+  padding:0!important;
+}
+.device .patchCol .portBox{
+  flex:none!important;
+  height:18px!important;
+  min-height:18px!important;
+}
+.device .deviceCenterTitle{
+  display:flex!important;
+  align-items:flex-end!important;
+  justify-content:center!important;
+  padding-bottom:8px!important;
+}
+
+
+/* STRICT BLOCK LAYOUT FIX */
+.device{
+  position:absolute;
+  overflow:visible!important;
+  background:#fff!important;
+  border:2px solid #8b5cf6!important;
+  border-radius:14px!important;
+  box-shadow:0 10px 24px rgba(0,0,0,.12)!important;
+  color:#0f172a!important;
+}
+.device.selected{
+  box-shadow:0 0 0 4px rgba(139,92,246,.22),0 10px 24px rgba(0,0,0,.12)!important;
+}
+.device .devHead{
+  height:70px!important;
+  padding:10px 12px!important;
+  display:flex!important;
+  gap:10px!important;
+  align-items:center!important;
+  border-bottom:1px solid #d7deea!important;
+  background:linear-gradient(#f8fafc,#eef2f7)!important;
+  border-radius:12px 12px 0 0!important;
+}
+.device .devIcon{
+  width:36px!important;height:36px!important;border-radius:10px!important;
+  background:#e0f2fe!important;border:1px solid #7dd3fc!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  font-size:16px!important;flex:0 0 auto!important;
+}
+.device .devTitle{
+  font-weight:800!important;font-size:13px!important;line-height:1.15!important;
+  white-space:normal!important;overflow:hidden!important;display:-webkit-box!important;
+  -webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;
+}
+.device .devModel{
+  font-size:11px!important;line-height:1.15!important;color:#64748b!important;margin-top:2px!important;
+  white-space:normal!important;overflow:hidden!important;display:-webkit-box!important;
+  -webkit-line-clamp:2!important;-webkit-box-orient:vertical!important;
+}
+.device .devTag{
+  position:absolute!important;right:10px!important;top:-14px!important;
+  background:#0f172a!important;color:#fff!important;border-radius:999px!important;
+  padding:3px 9px!important;font-weight:800!important;font-size:10px!important;
+  box-shadow:0 3px 9px rgba(0,0,0,.25)!important;
+  max-width:75%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+}
+.device .metaGrid{
+  position:absolute!important;left:12px!important;right:12px!important;top:82px!important;
+  display:grid!important;grid-template-columns:1fr 1fr!important;gap:5px!important;
+}
+.device .metaItem{
+  background:#f8fafc!important;border:1px solid #d7deea!important;border-radius:6px!important;
+  padding:4px 6px!important;font-size:10px!important;line-height:1.1!important;color:#475569!important;
+  white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;
+}
+.device .portsWrap2{
+  position:absolute!important;left:10px!important;right:10px!important;top:160px!important;bottom:14px!important;
+  display:grid!important;grid-template-columns:46px 1fr 46px!important;gap:10px!important;
+  overflow:hidden!important;
+}
+.device .portsWrapPatch{
+  position:absolute!important;left:10px!important;right:10px!important;top:160px!important;bottom:14px!important;
+  display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;
+  overflow:hidden!important;
+}
+.device .portsCol2{
+  display:flex!important;flex-direction:column!important;align-items:stretch!important;min-width:0!important;height:100%!important;
+}
+.device .portsLabel2{
+  flex:0 0 auto!important;font-size:10px!important;line-height:12px!important;height:12px!important;
+  color:#64748b!important;font-weight:800!important;text-align:center!important;margin-bottom:4px!important;
+}
+.device .portsStack2{
+  flex:1 1 auto!important;display:flex!important;flex-direction:column!important;gap:4px!important;min-height:0!important;
+}
+.device .portsFill2{
+  background:transparent!important;border:0!important;border-radius:0!important;
+}
+.device .portBox2{
+  flex:0 0 18px!important;height:18px!important;min-height:18px!important;
+  border:1px solid #cbd5e1!important;border-radius:4px!important;background:#fff!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  font-size:9px!important;line-height:18px!important;color:#334155!important;
+  overflow:hidden!important;
+}
+.device .portBox2.used.in{background:#e0f2fe!important;border-color:#0ea5e9!important;color:#075985!important}
+.device .portBox2.used.out{background:#ffedd5!important;border-color:#f97316!important;color:#9a3412!important}
+.device .delete{z-index:30!important}
+.device .handle{z-index:30!important}
+
+</style>
+ <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Кабельный журнал</x:Name><x:WorksheetOptions><x:Print><x:ValidPrinterInfo/></x:Print><x:FreezePanes/><x:FrozenNoSplit/><x:SplitHorizontal>4</x:SplitHorizontal><x:TopRowBottomPane>4</x:TopRowBottomPane></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+ </head><body><table>
+ <col style="width:45px"><col style="width:130px"><col style="width:145px"><col style="width:80px"><col style="width:320px"><col style="width:210px"><col style="width:80px"><col style="width:320px"><col style="width:210px"><col style="width:80px"><col style="width:95px"><col style="width:75px"><col style="width:75px"><col style="width:95px"><col style="width:260px">
+ <tr><td class="title" colspan="15">Кабельный журнал</td></tr>
+ <tr><td class="meta" colspan="15">Сформировано из визуальной схемы: ${xlsEsc(generated)}. Шрифт: ISOCPEUR, 12 pt, курсив.</td></tr>
+ <tr><th class="head" rowspan="3">№№</th><th class="head" rowspan="3">Маркировка кабеля</th><th class="head" rowspan="3">Тип кабеля</th><th class="head" colspan="6">Трасса</th><th class="head" colspan="4">Способ прокладки</th><th class="head" rowspan="3">Длина (общая), м</th><th class="head" rowspan="3">Примеч.</th></tr>
+ <tr><th class="head" colspan="3">Начало</th><th class="head" colspan="3">Конец</th><th class="head" rowspan="2">в гофре, м</th><th class="head" rowspan="2">в кабель-канале, м</th><th class="head" rowspan="2">в лотке, м</th><th class="head" rowspan="2">открыто, м</th></tr>
+ <tr><th class="sub">№. Пом.</th><th class="sub">Оборудование</th><th class="sub">Порт подключения</th><th class="sub">№. Пом.</th><th class="sub">Оборудование</th><th class="sub">Порт подключения</th></tr>
+ ${body||'<tr><td colspan="15" class="num">Нет кабельных линий</td></tr>'}
+ </table></body></html>`;
+ download('\ufeff'+html,'Кабельный_журнал_как_шаблон.xls','application/vnd.ms-excel;charset=utf-8');
+}
+function xlsEsc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]))}
+function exportPDF(){const oz=zoom,op={...pan};zoom=1;pan={x:0,y:0};applyTransform();setTimeout(()=>{window.print();zoom=oz;pan=op;applyTransform()},100)}
+function download(c,n,t){const b=new Blob([c],{type:t}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=n;a.click();URL.revokeObjectURL(u)}
+function openSheetEditor(){syncSheet();sheetModal.style.display='flex'}function closeSheetEditor(){sheetModal.style.display='none'}function syncSheet(){s_sheet.value=project.sheet;s_no.value=project.sheetNo;s_title.value=project.sheetTitle;s_code.value=project.sheetCode;s_section.value=project.sheetSection;s_stage.value=project.sheetStage;s_date.value=project.sheetDate;s_note.value=project.sheetFontNote}
+function toggleInspector(){
+ const panel=document.getElementById('rightPanel');
+ if(panel)panel.classList.toggle('inspectorHidden');
+}
+function showInspector(){
+ const panel=document.getElementById('rightPanel');
+ if(panel)panel.classList.remove('inspectorHidden');
+}
+function toggleWide(){
+ document.querySelector('.app').classList.toggle('schemeWide');
+ setTimeout(fitView,50);
+}
+function selfCheck(){
+ const checks=[
+  ['перемещение блоков', typeof dragObj==='function'],
+  ['изменение размеров схемы/блоков/помещений', typeof resizeObj==='function'&&typeof zoomBy==='function'],
+  ['удаление отдельных портов', typeof deletePort==='function'],
+  ['добавление входов/выходов', typeof addPort==='function'],
+  ['входы слева, выходы справа', true],
+  ['выбор типа сигнала HDBaseT/LAN/HDMI', Array.isArray(signalTypes)&&signalTypes.includes('HDBaseT')&&signalTypes.includes('LAN')&&signalTypes.includes('HDMI')],
+  ['поля блока: спецификация, Unit, помещение, сеть', true],
+  ['переименование помещений', true],
+  ['патч-панель с двумя рядами RJ-45/Krone', true],
+  ['Excel в стиле шаблона, ISOCPEUR 12 курсив', typeof exportXLS==='function'],
+  ['PDF/печать схемы с листом и штампом', typeof exportPDF==='function'],
+  ['JSON экспорт/импорт проекта', typeof exportJSON==='function'&&typeof importJSONFile==='function'],
+  ['поля способа прокладки кабеля', true]
+ ];
+ alert(checks.map(x=>(x[1]?'✓ ':'✗ ')+x[0]).join('\n'));
+}
+function executeCommand(){runCommand({key:'Enter',target:cmd})}function runCommand(e){if(e.key!=='Enter')return;const c=e.target.value.trim().toLowerCase();e.target.value='';if(c==='block')openAddBlock();else if(c==='room')addRoom();else if(c==='cable')setTool('connect');else if(c==='delete'||c==='del')deleteSelected();else if(c==='fit')fitView();else if(c==='demo')loadDemo();else if(c==='pdf')exportPDF();else if(c==='save')saveLocal();else if(c==='check')selfCheck()}
+function loadDemo(){
+ devices=[];rooms=[];cables=[];counters={};
+ rooms.push({id:uid(),name:'ТКШ №0.4.34/1',roomNo:'0.4.34',x:80,y:80,w:1500,h:850,wM:30,hM:17});
+ addDevice(presets[0],160,170);
+ Object.assign(devices.at(-1),{code:'ER-1-0',room:'0.4.34',unit:'46',specNo:'4.1',rack:'ТКШ №0.4.34/1',networkName:'RTR-1'});
+ addDevice(presets[1],620,150);
+ Object.assign(devices.at(-1),{code:'SW-1-0-1',room:'0.4.34',unit:'44',specNo:'4.2',rack:'ТКШ №0.4.34/1',networkName:'SW-1'});
+ addDevice(presets[2],1080,140);
+ Object.assign(devices.at(-1),{code:'PP.034/1/1',room:'0.4.34',unit:'42',specNo:'4.5',rack:'ТКШ №0.4.34/1',networkName:'PP-1'});
+ createCable(devices[0].id,2,devices[1].id,23);
+ createCable(devices[1].id,0,devices[2].id,0);
+ selected={type:null,id:null};
+ renderAll();
+ setTimeout(fitView,50);
+}
+blockModal.addEventListener('click',e=>{if(e.target.id==='blockModal')closeAddBlock()});sheetModal.addEventListener('click',e=>{if(e.target.id==='sheetModal')closeSheetEditor()});window.addEventListener('keydown',e=>{if(e.key==='Delete')deleteSelected();if(e.key==='Escape'){pending=null;selected={type:null,id:null};renderAll()}})
+init();
+</script>
+</body></html>
