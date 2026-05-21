@@ -1,0 +1,2388 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Кабельный журнал — CAD</title>
+<style>
+/* =================================================================
+   Cable Journal CAD — clean rewrite
+   Architecture:
+   - Devices: outer .device positioned absolutely on stage.
+     Inside: CSS grid layout (header / meta / body). No absolute
+     internal positioning. Block auto-grows by content height.
+   - Port connection dots are siblings on stage, positioned by
+     reading port-row offsets via getBoundingClientRect()
+     once after each render (cached). Wires use these coords.
+   - Inspector writes to model directly via input events.
+     It re-renders only on selection change / structural changes,
+     never per-keystroke — so focus is preserved.
+================================================================= */
+
+:root{
+  --bg:#eef3f8; --panel:#fff; --text:#0f172a; --muted:#64748b;
+  --border:#cbd5e1; --border-strong:#94a3b8;
+  --blue:#2563eb; --blue-soft:#dbeafe;
+  --orange:#f97316; --orange-soft:#ffedd5;
+  --green:#16a34a; --red:#dc2626;
+  --violet:#8b5cf6;
+  --hdr-bg:#0f172a;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+  font-family:ISOCPEUR,'Arial Narrow',Arial,sans-serif;font-size:12pt;font-style:italic;overflow:hidden}
+button,input,select,textarea{font:inherit;font-size:12px;font-style:normal}
+button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;color:var(--text)}
+button:hover{border-color:var(--blue);background:#eff6ff}
+button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+button.primary:hover{background:#1d4ed8}
+button.danger{background:var(--red);color:#fff;border-color:var(--red)}
+button.danger:hover{background:#b91c1c}
+button.active{background:var(--blue-soft);border-color:var(--blue);color:var(--blue)}
+input,select,textarea{border:1px solid var(--border);border-radius:6px;padding:5px 7px;width:100%;background:#fff;color:var(--text);outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--blue);box-shadow:0 0 0 2px #2563eb22}
+label{display:block;color:var(--muted);font-size:11px;margin-bottom:2px;text-transform:uppercase;letter-spacing:.04em}
+
+/* ===================== App skeleton ===================== */
+.app{height:100%;display:grid;grid-template-columns:280px 1fr 380px;grid-template-rows:48px 1fr 220px}
+.app.wide{grid-template-columns:1fr;grid-template-rows:48px 1fr 0}
+.app.wide .left,.app.wide .bottom{display:none}
+.app.wide .right{position:absolute;right:12px;top:60px;bottom:12px;width:380px;z-index:80;
+  border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 32px #0003;background:#fff}
+.app.wide .right.hidden{display:none}
+
+.top{grid-column:1/4;background:var(--hdr-bg);color:#fff;display:flex;align-items:center;
+  justify-content:space-between;padding:0 14px;gap:10px}
+.top .brand{font-weight:800;font-size:13px;letter-spacing:.02em}
+.top .actions{display:flex;gap:6px;flex-wrap:wrap}
+.top button{background:#1f2937;color:#fff;border-color:#334155;font-size:11px}
+.top button:hover{background:#374151}
+
+.left{grid-column:1/2;grid-row:2/4;background:#fff;border-right:1px solid var(--border);
+  display:flex;flex-direction:column;min-height:0}
+.center{grid-column:2/3;grid-row:2/3;position:relative;overflow:hidden;background:#f1f5f9;min-width:0}
+.right{grid-column:3/4;grid-row:2/4;background:#fff;border-left:1px solid var(--border);
+  overflow:auto;padding:10px;min-height:0}
+.bottom{grid-column:2/3;grid-row:3/4;background:#fff;border-top:1px solid var(--border);overflow:auto;min-height:0;min-width:0}
+
+.panel-head{padding:10px 12px;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center;gap:6px;
+  position:sticky;top:0;background:#fff;z-index:2}
+.panel-title{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:800;letter-spacing:.06em}
+
+/* ===================== Library ===================== */
+.lib-tools{padding:10px;border-bottom:1px solid var(--border);display:grid;gap:6px}
+.library{overflow:auto;padding:8px 10px;flex:1;min-height:0}
+.preset{border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:6px;
+  background:#fff;cursor:grab;user-select:none;font-style:normal}
+.preset:hover{border-color:var(--blue);background:#f8fbff}
+.preset strong{display:block;font-size:12px;font-weight:700}
+.preset .sub{font-size:11px;color:var(--muted);margin-top:2px}
+.preset .tags{margin-top:4px;display:flex;gap:3px;flex-wrap:wrap}
+.tag{display:inline-block;background:#f1f5f9;border-radius:999px;padding:1px 7px;font-size:10px;color:#334155}
+
+/* ===================== Toolbar / Layers ===================== */
+.toolbar{position:absolute;left:12px;top:12px;z-index:50;display:flex;gap:6px;flex-wrap:wrap;
+  background:#ffffffee;border:1px solid var(--border);border-radius:10px;padding:6px;
+  box-shadow:0 6px 20px #0002;font-style:normal}
+.toolbar .sep{width:1px;background:var(--border);margin:0 2px}
+.zoom-label{display:inline-flex;align-items:center;justify-content:center;font-size:11px;
+  color:var(--muted);min-width:42px;padding:0 4px;font-style:normal}
+
+.layers{position:absolute;right:12px;top:12px;z-index:50;
+  background:#ffffffee;border:1px solid var(--border);border-radius:10px;padding:8px 10px;
+  box-shadow:0 6px 20px #0002;font-size:11px;font-style:normal}
+.layers .lay-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;
+  font-weight:800;margin-bottom:4px}
+.layers label{display:flex;gap:6px;align-items:center;margin:2px 0;color:#334155;
+  text-transform:none;letter-spacing:0;font-size:11px;font-weight:500}
+.layers input{width:auto;margin:0}
+
+/* ===================== Stage / Sheet ===================== */
+.stage-outer{position:absolute;inset:0;overflow:hidden;cursor:default}
+.stage-outer.panning{cursor:grabbing}
+.stage-outer.tool-pan{cursor:grab}
+.stage-outer.tool-connect{cursor:crosshair}
+
+.stage{position:absolute;left:0;top:0;width:6000px;height:4200px;transform-origin:0 0;
+  background:#fff;
+  background-image:
+    linear-gradient(rgba(148,163,184,.25) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(148,163,184,.25) 1px,transparent 1px),
+    linear-gradient(rgba(15,23,42,.13) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(15,23,42,.13) 1px,transparent 1px);
+  background-size:20px 20px,20px 20px,100px 100px,100px 100px;
+}
+
+#wires{position:absolute;left:0;top:0;width:6000px;height:4200px;z-index:3;pointer-events:none;overflow:visible}
+.wire{fill:none;stroke:var(--orange);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.wire.selected{stroke:var(--blue);stroke-width:3.4}
+.wire-hit{fill:none;stroke:transparent;stroke-width:14;cursor:pointer;pointer-events:stroke}
+.wire-label{paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round;
+  font-size:11px;fill:#1e293b;pointer-events:none;font-family:ISOCPEUR,Arial,sans-serif;font-style:italic}
+
+.sheet{position:absolute;left:0;top:0;border:2px solid #111827;background:transparent;z-index:1;pointer-events:none}
+.title-block{position:absolute;right:0;bottom:0;width:520px;height:130px;background:#fff;
+  border-left:2px solid #111827;border-top:2px solid #111827;
+  display:grid;grid-template-columns:60px 1fr 90px 90px;grid-template-rows:repeat(5,minmax(0,1fr));
+  font-size:11px;font-style:italic;pointer-events:auto;color:#0f172a;font-family:ISOCPEUR,Arial,sans-serif}
+.title-block > div{border-right:1px solid #111827;border-bottom:1px solid #111827;padding:3px 5px;
+  display:flex;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.title-block .big{font-weight:800;font-size:13px}
+.title-block .editable{cursor:pointer}
+.title-block .editable:hover{background:#dbeafe}
+.title-block .span2{grid-column:span 2}
+.title-block .span3{grid-column:span 3}
+
+/* ===================== Rooms ===================== */
+.room{position:absolute;z-index:2;background:rgba(226,232,240,.22);
+  border:2px dashed #64748b;border-radius:6px;cursor:move}
+.room.selected{border-style:solid;border-color:var(--blue);background:rgba(37,99,235,.06);
+  box-shadow:0 0 0 2px #2563eb33}
+.room-label{position:absolute;left:8px;top:6px;background:#fff;border:1px solid var(--border);
+  border-radius:8px;padding:3px 8px;font-weight:700;font-size:12px;font-style:normal;cursor:move;user-select:none}
+.dim-h,.dim-v{position:absolute;background:#fff;border:1px solid var(--border);border-radius:999px;
+  padding:1px 7px;font-size:10px;font-style:normal;color:#334155;pointer-events:none}
+.dim-h{left:50%;bottom:-22px;transform:translateX(-50%)}
+.dim-v{right:-32px;top:50%;transform:translateY(-50%) rotate(90deg)}
+
+/* ===================== DEVICE BLOCK — clean grid layout =====================
+   Outer .device is a CSS grid:
+     row 1: header (icon + title + model)
+     row 2: meta (2-col grid of small fields)
+     row 3: body (ports, fills remaining)
+   No absolute positioning of inner sections. Everything stays inside.
+   Block height auto-grows with port count.
+*/
+.device{
+  position:absolute;z-index:5;background:#fff;
+  border:1.5px solid var(--violet);border-radius:10px;
+  box-shadow:0 4px 14px rgba(15,23,42,.08);
+  display:grid;grid-template-rows:auto auto 1fr;
+  font-style:normal;color:#0f172a;overflow:visible;
+  user-select:none;
+}
+.device.selected{box-shadow:0 0 0 3px #8b5cf633,0 6px 18px rgba(15,23,42,.12);border-color:var(--violet)}
+.device.type-router{border-color:#7c3aed}
+.device.type-switch{border-color:#2563eb}
+.device.type-patch{border-color:#0f766e}
+.device.type-server{border-color:#0891b2}
+.device.type-hdmi,.device.type-display{border-color:#ea580c}
+.device.type-kvm{border-color:#9333ea}
+.device.type-amp,.device.type-speaker{border-color:#be123c}
+.device.type-ups{border-color:#ca8a04}
+.device.type-ap{border-color:#0284c7}
+
+.dev-tag{position:absolute;right:8px;top:-11px;background:#0f172a;color:#fff;
+  border-radius:999px;padding:2px 8px;font-size:10px;font-weight:700;
+  box-shadow:0 2px 6px rgba(0,0,0,.3);max-width:80%;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.dev-room{position:absolute;left:8px;top:-11px;background:#fff;color:#0f172a;
+  border:1.5px solid var(--violet);border-radius:999px;padding:1px 7px;font-size:10px;font-weight:700;
+  pointer-events:none}
+
+.dev-header{
+  background:linear-gradient(#f8fafc,#eef2f7);
+  border-bottom:1px solid #d8e0ec;
+  border-radius:8px 8px 0 0;
+  padding:8px 10px;
+  display:grid;grid-template-columns:32px 1fr;gap:8px;align-items:center;
+  cursor:move;min-height:54px;
+}
+.dev-icon{width:32px;height:32px;border-radius:8px;background:#e0f2fe;border:1px solid #7dd3fc;
+  display:flex;align-items:center;justify-content:center;font-size:16px;font-style:normal}
+.dev-titles{min-width:0;overflow:hidden}
+.dev-name{font-weight:700;font-size:12px;line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+.dev-model{font-size:10px;color:var(--muted);line-height:1.2;margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
+  -webkit-line-clamp:1;-webkit-box-orient:vertical}
+
+.dev-meta{
+  display:grid;grid-template-columns:1fr 1fr;gap:3px;
+  padding:6px 8px;border-bottom:1px solid #e2e8f0;background:#fafbfd;
+}
+.meta-item{font-size:10px;color:#475569;background:#fff;border:1px solid #e2e8f0;
+  border-radius:5px;padding:2px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+.meta-item b{color:#334155;font-weight:700;margin-right:3px}
+
+/* ---- Body: ports area ---- */
+.dev-body{padding:6px 8px 8px;display:grid;gap:4px;min-height:40px}
+
+/* Ordinary device: two columns (in/out) with header */
+.dev-body.ord{grid-template-columns:1fr 1fr;gap:4px 12px}
+.dev-body.ord .col-head{font-size:9px;font-weight:700;color:var(--muted);
+  text-align:center;text-transform:uppercase;letter-spacing:.06em;padding:1px 0}
+.dev-body.ord .col{display:flex;flex-direction:column;gap:3px;min-width:0}
+
+/* Patch panel: two equal columns (Krone / RJ-45) */
+.dev-body.patch{grid-template-columns:1fr 1fr;gap:4px 8px}
+.dev-body.patch .col-head{font-size:9px;font-weight:700;color:var(--muted);
+  text-align:center;text-transform:uppercase;letter-spacing:.06em;padding:1px 0}
+.dev-body.patch .col{display:flex;flex-direction:column;gap:2px;min-width:0}
+
+/* Single port row */
+.port-row{
+  display:flex;align-items:center;gap:4px;min-width:0;
+  background:#fff;border:1px solid var(--border);border-radius:5px;
+  padding:2px 5px;font-size:10px;line-height:1.2;height:20px;
+}
+.port-row .pnum{font-weight:700;color:#334155;flex:0 0 auto;min-width:14px;text-align:right}
+.port-row .pname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#475569}
+.port-row .psig{flex:0 0 auto;font-size:9px;color:#64748b;background:#f1f5f9;
+  border-radius:3px;padding:0 4px}
+.port-row.in{background:#f0f9ff;border-color:#bae6fd}
+.port-row.in.used{background:#e0f2fe;border-color:#0ea5e9}
+.port-row.out{background:#fff7ed;border-color:#fed7aa}
+.port-row.out.used{background:#ffedd5;border-color:#f97316}
+.port-row.krone{background:#f5f3ff;border-color:#ddd6fe}
+.port-row.krone.used{background:#ede9fe;border-color:#8b5cf6}
+.port-row.rj45{background:#ecfdf5;border-color:#a7f3d0}
+.port-row.rj45.used{background:#d1fae5;border-color:#10b981}
+
+/* Selection handles */
+.dev-delete,.dev-handle{position:absolute;display:none;z-index:30}
+.device.selected .dev-delete,.device.selected .dev-handle{display:flex}
+.dev-delete{right:-9px;top:-9px;width:20px;height:20px;border-radius:50%;
+  background:var(--red);color:#fff;border:2px solid #fff;
+  align-items:center;justify-content:center;cursor:pointer;font-weight:900;
+  font-size:13px;line-height:1;box-shadow:0 2px 6px #0003;font-style:normal}
+.dev-handle{right:-7px;bottom:-7px;width:14px;height:14px;border-radius:3px;
+  background:var(--blue);border:2px solid #fff;cursor:nwse-resize;box-shadow:0 2px 6px #0003}
+
+/* Port dots (connection points outside block) */
+.port-dot{position:absolute;width:11px;height:11px;border-radius:50%;
+  background:#fff;border:2px solid var(--blue);z-index:8;cursor:crosshair;
+  transition:transform .1s;font-style:normal}
+.port-dot:hover{transform:scale(1.4)}
+.port-dot.in{border-color:#0ea5e9}
+.port-dot.out{border-color:#f97316}
+.port-dot.krone{border-color:#8b5cf6}
+.port-dot.rj45{border-color:#10b981}
+.port-dot.used.in{background:#0ea5e9}
+.port-dot.used.out{background:#f97316}
+.port-dot.used.krone{background:#8b5cf6}
+.port-dot.used.rj45{background:#10b981}
+.port-dot.active{background:#f59e0b;border-color:#92400e;
+  box-shadow:0 0 0 5px #f59e0b55;animation:pulse 1s infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 9px #f59e0b22}}
+.port-dot:hover::after{
+  content:attr(data-tip);position:absolute;left:14px;top:-4px;
+  background:#0f172a;color:#fff;border-radius:6px;padding:4px 8px;
+  font-size:11px;white-space:nowrap;z-index:90;pointer-events:none;
+  font-style:normal;
+}
+
+/* ===================== Inspector ===================== */
+.insp-section{border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px;background:#fff;font-style:normal}
+.insp-title{font-size:10px;text-transform:uppercase;color:var(--muted);
+  font-weight:800;letter-spacing:.06em;margin-bottom:8px;display:flex;
+  justify-content:space-between;align-items:center}
+.field{margin-bottom:7px;font-style:normal}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.hint{background:#f8fafc;border:1px solid var(--border);border-radius:8px;
+  padding:8px;font-size:11px;color:#475569;line-height:1.5;font-style:normal}
+
+.port-list{margin-top:6px;display:grid;gap:4px}
+.port-edit{display:grid;grid-template-columns:30px 50px 1fr 70px 90px 70px 24px;
+  gap:3px;align-items:center;font-size:11px;font-style:normal}
+.port-edit.head{font-size:9px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.port-edit input,.port-edit select{padding:3px 5px;font-size:11px}
+.port-edit .pi-num{text-align:center;font-weight:700;color:#334155}
+.port-edit .pi-del{background:#fff;border:1px solid var(--border);color:var(--red);
+  border-radius:5px;padding:2px;cursor:pointer;font-weight:900;height:24px}
+.port-edit .pi-del:hover{background:#fee2e2;border-color:var(--red)}
+.port-edit .used{background:#f0fdf4;border-color:#22c55e}
+
+/* ===================== Journal ===================== */
+.j-head{display:flex;align-items:center;justify-content:space-between;
+  padding:6px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;
+  background:#fff;z-index:3;font-style:normal}
+.j-wrap{overflow:auto}
+table.journal{border-collapse:collapse;width:100%;font-size:11px;font-style:normal}
+.journal th,.journal td{border:1px solid var(--border);padding:3px 6px;text-align:left;vertical-align:top}
+.journal th{background:#f1f5f9;font-weight:700;position:sticky;top:0;z-index:1;font-size:10px;text-transform:uppercase;color:#334155}
+.journal tr:hover td{background:#f8fafc}
+.journal tr.selected td{background:#dbeafe}
+
+/* ===================== Modal / Command / Context ===================== */
+.modal-back{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;
+  z-index:300;align-items:center;justify-content:center;font-style:normal}
+.modal-back.open{display:flex}
+.modal{width:min(900px,92vw);max-height:88vh;background:#fff;border-radius:14px;
+  display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px #0006}
+.modal-head{padding:12px 16px;border-bottom:1px solid var(--border);
+  display:flex;justify-content:space-between;align-items:center}
+.modal-head h3{margin:0;font-size:15px;font-weight:700}
+.modal-body{padding:14px;overflow:auto}
+.preset-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.preset-grid .big-preset{border:1px solid var(--border);border-radius:10px;
+  padding:10px;background:#fff;cursor:pointer;text-align:left}
+.preset-grid .big-preset:hover{border-color:var(--blue);background:#eff6ff}
+.preset-grid .big-preset strong{display:block;font-size:13px;font-weight:700}
+.preset-grid .big-preset .sub{font-size:11px;color:var(--muted);margin-top:3px}
+
+.context{position:fixed;display:none;z-index:200;background:#fff;border:1px solid var(--border);
+  border-radius:10px;box-shadow:0 8px 24px #0003;padding:5px;min-width:180px;font-style:normal}
+.context.open{display:block}
+.context button{display:block;width:100%;text-align:left;background:#fff;border:0;
+  border-radius:6px;padding:6px 10px;font-size:12px}
+.context button:hover{background:#eff6ff}
+.context .sep{height:1px;background:var(--border);margin:4px 0}
+
+.command{position:absolute;left:12px;bottom:12px;z-index:60;
+  background:#0f172aee;color:#fff;border-radius:10px;padding:6px 10px;
+  display:flex;gap:8px;align-items:center;min-width:480px;font-style:normal}
+.command input{background:#111827;color:#fff;border-color:#334155;height:28px;font-size:12px}
+.command .hint-cmd{font-size:10px;color:#94a3b8}
+
+.status-bar{position:absolute;right:12px;bottom:12px;z-index:60;
+  background:#fff;border:1px solid var(--border);border-radius:10px;
+  padding:5px 10px;font-size:11px;color:#475569;font-style:normal}
+
+/* ===================== Print ===================== */
+@media print{
+  @page{size:landscape;margin:0}
+  html,body{overflow:visible;background:#fff;height:auto}
+  .top,.left,.right,.bottom,.toolbar,.layers,.command,.status-bar,
+  .context,.modal-back,.dev-delete,.dev-handle,.port-dot{display:none!important}
+  .app{display:block;height:auto}
+  .center{position:absolute;inset:0;width:100vw;height:100vh;overflow:hidden}
+  .stage{background:#fff!important;background-image:none!important}
+  .device{box-shadow:none!important}
+  .room{box-shadow:none!important}
+  .title-block{font-style:italic}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <div class="top">
+    <div class="brand">Кабельный журнал — CAD</div>
+    <div class="actions">
+      <button onclick="openAddBlock()">+ Блок</button>
+      <button onclick="addRoom()">+ Помещение</button>
+      <button onclick="openSheetEditor()">Лист…</button>
+      <button onclick="toggleWide()" id="btnWide">Большая схема</button>
+      <button onclick="toggleInspector()" id="btnInsp" style="display:none">Скрыть инспектор</button>
+      <span style="width:8px"></span>
+      <button onclick="saveLocal()">💾 Сохранить</button>
+      <button onclick="loadLocal()">📂 Загрузить</button>
+      <button onclick="exportJSON()">JSON</button>
+      <label style="margin:0;display:inline-flex;align-items:center;gap:0">
+        <input type="file" id="fileImport" accept=".json" style="display:none" onchange="importJSONFile(event)">
+        <button onclick="document.getElementById('fileImport').click()">Импорт</button>
+      </label>
+      <button onclick="exportXLS()">📊 Excel</button>
+      <button onclick="exportPDF()">📄 PDF</button>
+      <button onclick="loadDemo()">Демо</button>
+      <button onclick="validateProject()">Проверить</button>
+    </div>
+  </div>
+
+  <div class="left">
+    <div class="panel-head">
+      <span class="panel-title">Библиотека</span>
+      <button onclick="openAddBlock()" style="padding:4px 8px;font-size:11px">+</button>
+    </div>
+    <div class="lib-tools">
+      <input id="searchPreset" placeholder="🔎 Поиск по библиотеке" oninput="renderLibrary()">
+      <select id="catPreset" onchange="renderLibrary()">
+        <option value="">Все категории</option>
+        <option value="Сеть">Сеть</option>
+        <option value="СКС">СКС</option>
+        <option value="AV">AV</option>
+        <option value="Аудио">Аудио</option>
+        <option value="KVM">KVM</option>
+        <option value="Питание">Питание</option>
+      </select>
+    </div>
+    <div class="library" id="library"></div>
+  </div>
+
+  <div class="center">
+    <div class="toolbar">
+      <button id="tool_select" class="active" onclick="setTool('select')" title="Выбор (V)">▣</button>
+      <button id="tool_connect" onclick="setTool('connect')" title="Кабель (C)">⥯</button>
+      <button id="tool_pan" onclick="setTool('pan')" title="Рука (H)">✋</button>
+      <span class="sep"></span>
+      <button onclick="zoomBy(.9)" title="Уменьшить">−</button>
+      <span class="zoom-label" id="zoomLabel">55%</span>
+      <button onclick="zoomBy(1.1)" title="Увеличить">+</button>
+      <button onclick="fitView()">Вписать</button>
+      <span class="sep"></span>
+      <button onclick="centerOnContent()">К содержимому</button>
+    </div>
+
+    <div class="layers">
+      <div class="lay-title">Слои</div>
+      <label><input type="checkbox" id="layerSheet" checked onchange="renderStage()"> Лист</label>
+      <label><input type="checkbox" id="layerRooms" checked onchange="renderStage()"> Помещения</label>
+      <label><input type="checkbox" id="layerDevices" checked onchange="renderStage()"> Оборудование</label>
+      <label><input type="checkbox" id="layerCables" checked onchange="renderStage()"> Кабели</label>
+      <label><input type="checkbox" id="layerPorts" checked onchange="renderStage()"> Порты</label>
+      <label><input type="checkbox" id="layerDims" checked onchange="renderStage()"> Размеры</label>
+      <label><input type="checkbox" id="layerLabels" checked onchange="renderStage()"> Подписи кабелей</label>
+    </div>
+
+    <div class="stage-outer" id="stageOuter">
+      <div class="stage" id="stage">
+        <svg id="wires" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </div>
+
+    <div class="command">
+      <span class="hint-cmd">cmd:</span>
+      <input id="cmdInput" placeholder="block / room / cable / delete / fit / demo / pdf / save / check"
+        onkeydown="if(event.key==='Enter'){runCommand(this.value);this.value=''}">
+    </div>
+    <div class="status-bar" id="statusBar">Готово</div>
+  </div>
+
+  <div class="right" id="inspector">
+    <div class="hint">Выберите блок, помещение или кабель, чтобы редактировать.</div>
+  </div>
+
+  <div class="bottom">
+    <div class="j-head">
+      <span class="panel-title">Кабельный журнал</span>
+      <span id="jCount" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="j-wrap" id="journalWrap"></div>
+  </div>
+
+</div>
+
+<div class="modal-back" id="modalBlock">
+  <div class="modal">
+    <div class="modal-head"><h3>Добавить блок оборудования</h3><button onclick="closeAddBlock()">×</button></div>
+    <div class="modal-body">
+      <div class="grid2" style="margin-bottom:10px">
+        <input id="modalSearch" placeholder="🔎 Поиск" oninput="renderPresetModal()">
+        <select id="modalCat" onchange="renderPresetModal()">
+          <option value="">Все категории</option>
+          <option value="Сеть">Сеть</option><option value="СКС">СКС</option>
+          <option value="AV">AV</option><option value="Аудио">Аудио</option>
+          <option value="KVM">KVM</option><option value="Питание">Питание</option>
+        </select>
+      </div>
+      <div class="preset-grid" id="presetGrid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-back" id="modalSheet">
+  <div class="modal" style="width:min(540px,92vw)">
+    <div class="modal-head"><h3>Параметры листа и штампа</h3><button onclick="closeSheetEditor()">×</button></div>
+    <div class="modal-body">
+      <div class="grid2">
+        <div class="field"><label>Формат</label>
+          <select id="s_sheet"><option>A3</option><option>A2</option><option>A1</option></select></div>
+        <div class="field"><label>Лист №</label><input id="s_no"></div>
+        <div class="field" style="grid-column:span 2"><label>Название схемы</label><input id="s_title"></div>
+        <div class="field"><label>Шифр / код проекта</label><input id="s_code"></div>
+        <div class="field"><label>Стадия</label><input id="s_stage"></div>
+        <div class="field"><label>Раздел</label><input id="s_section"></div>
+        <div class="field"><label>Дата</label><input id="s_date"></div>
+        <div class="field"><label>Разработал</label><input id="s_dev"></div>
+        <div class="field"><label>Проверил</label><input id="s_chk"></div>
+        <div class="field" style="grid-column:span 2"><label>Примечание</label><input id="s_note"></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px">
+        <button onclick="closeSheetEditor()">Отмена</button>
+        <button class="primary" onclick="saveSheet()">Применить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="context" id="contextMenu"></div>
+
+<script>
+/* =================================================================
+   SECTION 1 — Data model & constants
+================================================================= */
+
+const SIGNAL_TYPES = ['LAN','WAN','HDBaseT','HDMI','DisplayPort','USB Control',
+  'KVM','Dante','Audio','Speaker','PoE','RS-232','IR','GPIO','Power','Reserve'];
+
+const CABLE_TYPES = ['UTP Cat.5e','F/UTP Cat.6','F/UTP Cat.6a','S/FTP Cat.6a',
+  'HDMI','DisplayPort','USB 3.0','RS-232','Аудио микрофонный','Аудио линейный',
+  'Акустический 2×1.5','Акустический 2×2.5','ВВГнг(А)-LS 3×1.5','ВВГнг(А)-LS 3×2.5','Оптика OM4'];
+
+const ROUTE_TYPES = ['в гофре','в кабель-канале','в лотке','открыто'];
+
+/* Signal → cable marking prefix mapping (per spec section 9) */
+const SIGNAL_PREFIX = {
+  'LAN':'TL','WAN':'TL','PoE':'TL',
+  'KVM':'TM',
+  'HDMI':'VD','HDBaseT':'VD','DisplayPort':'VD',
+  'Audio':'AU','Speaker':'AU','Dante':'AD',
+  'USB Control':'CC','RS-232':'CC','IR':'CC','GPIO':'CC',
+  'Power':'PW','Reserve':'RZ',
+};
+
+/* Signal → default cable type */
+const SIGNAL_DEFAULT_CABLE = {
+  'LAN':'F/UTP Cat.6','WAN':'F/UTP Cat.6','PoE':'F/UTP Cat.6',
+  'HDBaseT':'F/UTP Cat.6a','HDMI':'HDMI','DisplayPort':'DisplayPort',
+  'USB Control':'USB 3.0','KVM':'F/UTP Cat.6a',
+  'Dante':'F/UTP Cat.6','Audio':'Аудио линейный','Speaker':'Акустический 2×2.5',
+  'RS-232':'RS-232','IR':'RS-232','GPIO':'RS-232',
+  'Power':'ВВГнг(А)-LS 3×1.5','Reserve':'F/UTP Cat.6',
+};
+
+/* Build a single port */
+function makePort(num, name, iface, signal, cable, direction){
+  return {
+    num: String(num),
+    name: name || ('Порт '+num),
+    interface: iface || 'RJ-45',
+    signal: signal || 'LAN',
+    cable: cable || 'F/UTP Cat.6',
+    direction: direction || 'out'  // 'in' | 'out'
+  };
+}
+
+/* Build ports for an ordinary device with n in and m out ports */
+function buildPorts(ins, outs, iface, sig, cab){
+  const arr = [];
+  for(let i=1; i<=ins; i++) arr.push(makePort(i,'Вход '+i,iface,sig,cab,'in'));
+  for(let i=1; i<=outs; i++) arr.push(makePort(i,'Выход '+i,iface,sig,cab,'out'));
+  return arr;
+}
+
+/* Build patch-panel ports: pairs of Krone+RJ-45 */
+function buildPatchPorts(count, iface){
+  const arr = [];
+  for(let i=1; i<=count; i++) arr.push(makePort(i,'Krone '+i,'Krone','LAN',iface,'in'));
+  for(let i=1; i<=count; i++) arr.push(makePort(i,'RJ-45 '+i,'RJ-45','LAN',iface,'out'));
+  return arr;
+}
+
+/* Device presets — library */
+const PRESETS = [
+  { type:'router', cat:'Сеть', icon:'🌐', prefix:'RTR', title:'Маршрутизатор',
+    model:'MikroTik CCR2004-16G-2S+', layout:'ord',
+    build: ()=> buildPorts(4, 12, 'RJ-45', 'LAN', 'F/UTP Cat.6')},
+  { type:'switch', cat:'Сеть', icon:'🔀', prefix:'SW', title:'Коммутатор 24 порта',
+    model:'Cisco CBS350-24T', layout:'ord',
+    build: ()=> buildPorts(2, 22, 'RJ-45', 'LAN', 'F/UTP Cat.6')},
+  { type:'switch', cat:'Сеть', icon:'🔀', prefix:'SW', title:'Коммутатор 48 портов PoE',
+    model:'Cisco CBS350-48FP-4G', layout:'ord',
+    build: ()=> buildPorts(2, 46, 'RJ-45', 'PoE', 'F/UTP Cat.6')},
+  { type:'patch', cat:'СКС', icon:'🔌', prefix:'PP', title:'Патч-панель Cat.5e',
+    model:'24×RJ-45 / Krone, 1U', layout:'patch',
+    build: ()=> buildPatchPorts(24, 'UTP Cat.5e')},
+  { type:'patch', cat:'СКС', icon:'🔌', prefix:'PP', title:'Патч-панель Cat.6a',
+    model:'24×RJ-45 / Krone, 1U', layout:'patch',
+    build: ()=> buildPatchPorts(24, 'F/UTP Cat.6a')},
+  { type:'server', cat:'AV', icon:'🖥️', prefix:'MSR', title:'Медиасервер',
+    model:'BrightSign XT1144', layout:'ord',
+    build: ()=> buildPorts(2, 4, 'HDMI', 'HDMI', 'HDMI')},
+  { type:'kvm', cat:'KVM', icon:'⌨️', prefix:'KVM', title:'KVM-адаптер',
+    model:'ATEN CN8000A', layout:'ord',
+    build: ()=> buildPorts(2, 2, 'RJ-45', 'KVM', 'F/UTP Cat.6a')},
+  { type:'hdmi', cat:'AV', icon:'📺', prefix:'VTX', title:'HDBaseT TX',
+    model:'AVPro AC-EX70-444-T', layout:'ord',
+    build: ()=> [
+      makePort(1,'HDMI вход','HDMI','HDMI','HDMI','in'),
+      makePort(2,'HDBaseT','RJ-45','HDBaseT','F/UTP Cat.6a','out'),
+      makePort(3,'Control','RJ-45','RS-232','RS-232','in')]},
+  { type:'hdmi', cat:'AV', icon:'📺', prefix:'VRX', title:'HDBaseT RX',
+    model:'AVPro AC-EX70-444-R', layout:'ord',
+    build: ()=> [
+      makePort(1,'HDBaseT','RJ-45','HDBaseT','F/UTP Cat.6a','in'),
+      makePort(2,'HDMI выход','HDMI','HDMI','HDMI','out'),
+      makePort(3,'Control','RJ-45','RS-232','RS-232','out')]},
+  { type:'kvm', cat:'AV', icon:'🔗', prefix:'USB', title:'USB-удлинитель',
+    model:'Icron USB 3.0 Spectra 3022', layout:'ord',
+    build: ()=> [
+      makePort(1,'USB host','USB-B','USB Control','USB 3.0','in'),
+      makePort(2,'USB device 1','USB-A','USB Control','USB 3.0','out'),
+      makePort(3,'USB device 2','USB-A','USB Control','USB 3.0','out')]},
+  { type:'display', cat:'AV', icon:'🖼️', prefix:'DISP', title:'Дисплей / LED',
+    model:'Samsung QM55C', layout:'ord',
+    build: ()=> [
+      makePort(1,'HDMI 1','HDMI','HDMI','HDMI','in'),
+      makePort(2,'HDMI 2','HDMI','HDMI','HDMI','in'),
+      makePort(3,'LAN control','RJ-45','LAN','F/UTP Cat.6','in'),
+      makePort(4,'Audio out','3.5mm','Audio','Аудио линейный','out')]},
+  { type:'amp', cat:'Аудио', icon:'🔊', prefix:'AMP', title:'Усилитель',
+    model:'QSC CX204V', layout:'ord',
+    build: ()=> [
+      makePort(1,'Line in 1','XLR','Audio','Аудио линейный','in'),
+      makePort(2,'Line in 2','XLR','Audio','Аудио линейный','in'),
+      makePort(3,'Speaker A','Phoenix','Speaker','Акустический 2×2.5','out'),
+      makePort(4,'Speaker B','Phoenix','Speaker','Акустический 2×2.5','out')]},
+  { type:'speaker', cat:'Аудио', icon:'📢', prefix:'SPK', title:'Акустическая система',
+    model:'JBL Control 26C', layout:'ord',
+    build: ()=> [makePort(1,'Вход','Phoenix','Speaker','Акустический 2×2.5','in')]},
+  { type:'ap', cat:'Сеть', icon:'📡', prefix:'AP', title:'Точка доступа Wi-Fi',
+    model:'Ubiquiti U6-Pro', layout:'ord',
+    build: ()=> [
+      makePort(1,'LAN/PoE','RJ-45','PoE','F/UTP Cat.6','in')]},
+  { type:'ups', cat:'Питание', icon:'⚡', prefix:'UPS', title:'ИБП',
+    model:'APC SRT3000RMXLI', layout:'ord',
+    build: ()=> [
+      makePort(1,'Вход питание','Шуко','Power','ВВГнг(А)-LS 3×2.5','in'),
+      makePort(2,'Выход 1','IEC','Power','ВВГнг(А)-LS 3×1.5','out'),
+      makePort(3,'Выход 2','IEC','Power','ВВГнг(А)-LS 3×1.5','out'),
+      makePort(4,'Выход 3','IEC','Power','ВВГнг(А)-LS 3×1.5','out'),
+      makePort(5,'Управление','RJ-45','LAN','F/UTP Cat.6','out')]},
+];
+
+/* Project state */
+const project = {
+  pxPerM: 50, reservePct: 10,
+  sheet: 'A3', sheetNo: '1',
+  sheetTitle: 'Функциональная схема комплекса оборудования',
+  sheetCode: 'КЖ-СХ', sheetStage: 'КЖ', sheetSection: 'Кабельная схема',
+  sheetDate: new Date().toLocaleDateString('ru-RU'),
+  sheetDev: '', sheetChk: '', sheetNote: '',
+};
+let rooms = [];
+let devices = [];
+let cables = [];
+let counters = {};
+
+let selected = { type: null, id: null };  // 'device' | 'room' | 'cable'
+let tool = 'select';   // 'select' | 'connect' | 'pan'
+let pendingPort = null;  // { did, pi }
+let zoom = 0.55;
+let pan = { x: 40, y: 40 };
+let wideMode = false;
+let inspectorHidden = false;
+
+/* =================================================================
+   SECTION 2 — Utilities
+================================================================= */
+
+function uid(){
+  if(crypto && crypto.randomUUID) return crypto.randomUUID();
+  return 'id-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
+}
+function esc(v){
+  return String(v??'').replace(/[&<>"']/g, c=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+function setStatus(t){ document.getElementById('statusBar').textContent = t }
+function snap(v){ return Math.round(v/20)*20 }
+function worldPoint(e){
+  const r = stageOuter.getBoundingClientRect();
+  return { x: (e.clientX-r.left-pan.x)/zoom, y: (e.clientY-r.top-pan.y)/zoom };
+}
+
+/* =================================================================
+   SECTION 3 — Initialization
+================================================================= */
+
+const stageOuter = document.getElementById('stageOuter');
+const stage = document.getElementById('stage');
+const wires = document.getElementById('wires');
+const inspector = document.getElementById('inspector');
+const journalWrap = document.getElementById('journalWrap');
+const library = document.getElementById('library');
+const contextMenu = document.getElementById('contextMenu');
+
+function init(){
+  renderLibrary();
+  setupStageEvents();
+  setupKeyboard();
+  applyTransform();
+  renderAll();
+  setStatus('Готово. Перетащите блок из библиотеки слева или нажмите «+ Блок».');
+}
+
+/* =================================================================
+   SECTION 4 — Library rendering
+================================================================= */
+
+function renderLibrary(){
+  const q = (document.getElementById('searchPreset').value||'').toLowerCase();
+  const c = document.getElementById('catPreset').value;
+  library.innerHTML = PRESETS.filter(p=>
+    (!c || p.cat===c) &&
+    (`${p.title} ${p.model}`.toLowerCase().includes(q))
+  ).map((p,i)=>{
+    const ports = p.build();
+    return `<div class="preset" draggable="true"
+      ondragstart="dragPresetStart(event,${i})"
+      ondblclick="addPresetCenter(${i})">
+      <strong>${p.icon} ${esc(p.title)}</strong>
+      <div class="sub">${esc(p.model)}</div>
+      <div class="tags">
+        <span class="tag">${esc(p.cat)}</span>
+        <span class="tag">${ports.length} порт.</span>
+      </div>
+    </div>`;
+  }).join('') || '<div class="hint">Ничего не найдено</div>';
+}
+
+function dragPresetStart(e, idx){
+  e.dataTransfer.setData('preset-idx', String(idx));
+}
+
+function addPresetCenter(idx){
+  const r = stageOuter.getBoundingClientRect();
+  const x = snap((r.width/2-pan.x)/zoom - 140);
+  const y = snap((r.height/2-pan.y)/zoom - 120);
+  addDevice(PRESETS[idx], x, y);
+}
+
+/* Modal "+ Block" */
+function openAddBlock(){
+  document.getElementById('modalBlock').classList.add('open');
+  renderPresetModal();
+  setTimeout(()=>document.getElementById('modalSearch').focus(),50);
+}
+function closeAddBlock(){ document.getElementById('modalBlock').classList.remove('open') }
+function renderPresetModal(){
+  const q = (document.getElementById('modalSearch').value||'').toLowerCase();
+  const c = document.getElementById('modalCat').value;
+  document.getElementById('presetGrid').innerHTML =
+    PRESETS.filter(p=>(!c||p.cat===c)&&(`${p.title} ${p.model}`.toLowerCase().includes(q)))
+    .map((p,i)=>{
+      const idx = PRESETS.indexOf(p);
+      return `<div class="big-preset" onclick="addPresetCenter(${idx});closeAddBlock()">
+        <strong>${p.icon} ${esc(p.title)}</strong>
+        <div class="sub">${esc(p.model)}</div>
+        <div class="tags"><span class="tag">${esc(p.cat)}</span>
+        <span class="tag">${p.build().length} портов</span></div>
+      </div>`;
+    }).join('') || '<div class="hint">Ничего не найдено</div>';
+}
+
+/* =================================================================
+   SECTION 5 — Device CRUD
+================================================================= */
+
+function nextCode(prefix){
+  counters[prefix] = (counters[prefix]||0) + 1;
+  if(prefix==='PP') return `PP.034/1/${counters[prefix]}`;
+  return `${prefix}-1-0-${counters[prefix]}`;
+}
+function nextNetName(type){
+  const m = {router:'RTR',switch:'SW',patch:'PP',server:'MSR',kvm:'KVM',
+    hdmi:'VTX',display:'DISP',amp:'AMP',speaker:'SPK',ap:'AP',ups:'UPS'};
+  const p = m[type] || 'DEV';
+  counters['net_'+p] = (counters['net_'+p]||0) + 1;
+  return `${p}-${counters['net_'+p]}`;
+}
+
+function addDevice(preset, x, y){
+  const d = {
+    id: uid(),
+    type: preset.type,
+    icon: preset.icon,
+    prefix: preset.prefix,
+    layout: preset.layout,    // 'ord' | 'patch'
+    title: preset.title,
+    model: preset.model,
+    code: nextCode(preset.prefix),
+    networkName: nextNetName(preset.type),
+    specNo: '',
+    rackUnit: '',
+    rackName: '',
+    roomNo: '',
+    note: '',
+    x: x || 100,
+    y: y || 100,
+    w: 260,
+    h: 0,  // auto-computed
+    ports: preset.build(),
+  };
+  devices.push(d);
+  selected = { type:'device', id:d.id };
+  renderAll();
+  setStatus('Блок добавлен: '+d.title);
+}
+
+function deleteDevice(id){
+  devices = devices.filter(d => d.id !== id);
+  cables = cables.filter(c => c.fromDeviceId !== id && c.toDeviceId !== id);
+}
+
+function duplicateDevice(id){
+  const src = devices.find(d=>d.id===id);
+  if(!src) return;
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uid();
+  copy.code = nextCode(copy.prefix);
+  copy.networkName = nextNetName(copy.type);
+  copy.x += 40; copy.y += 40;
+  devices.push(copy);
+  selected = { type:'device', id:copy.id };
+  renderAll();
+}
+
+/* =================================================================
+   SECTION 6 — Room CRUD
+================================================================= */
+
+function addRoom(){
+  const n = rooms.length + 1;
+  rooms.push({
+    id: uid(),
+    name: 'Помещение '+n,
+    roomNo: '0.4.'+(30+n),
+    x: 100+n*30, y: 100+n*30, w: 700, h: 420,
+  });
+  selected = { type:'room', id: rooms.at(-1).id };
+  renderAll();
+}
+function deleteRoom(id){ rooms = rooms.filter(r=>r.id!==id) }
+function duplicateRoom(id){
+  const src = rooms.find(r=>r.id===id);
+  if(!src) return;
+  const c = JSON.parse(JSON.stringify(src));
+  c.id = uid(); c.x += 40; c.y += 40; c.name += ' копия';
+  rooms.push(c);
+  selected = { type:'room', id:c.id };
+  renderAll();
+}
+
+/* =================================================================
+   SECTION 7 — Port CRUD
+================================================================= */
+
+function isPortUsed(did, pi){
+  return cables.some(c=>
+    (c.fromDeviceId===did && c.fromPortIndex===pi) ||
+    (c.toDeviceId===did && c.toPortIndex===pi)
+  );
+}
+
+function addPort(direction){
+  if(selected.type !== 'device') return;
+  const d = devices.find(x=>x.id===selected.id);
+  if(!d) return;
+  const sameDir = d.ports.filter(p=>p.direction===direction).length;
+  const num = sameDir + 1;
+  const lbl = direction==='in' ? 'Вход ' : 'Выход ';
+  d.ports.push(makePort(num, lbl+num, 'RJ-45', 'LAN', 'F/UTP Cat.6', direction));
+  renderAll();
+}
+
+function deletePort(did, pi){
+  if(isPortUsed(did, pi)){
+    alert('Этот порт занят кабелем. Сначала удалите кабель.');
+    return;
+  }
+  const d = devices.find(x=>x.id===did);
+  if(!d) return;
+  d.ports.splice(pi, 1);
+  /* Shift cable port indices */
+  cables.forEach(c=>{
+    if(c.fromDeviceId===did && c.fromPortIndex > pi) c.fromPortIndex--;
+    if(c.toDeviceId===did && c.toPortIndex > pi) c.toPortIndex--;
+  });
+  renderAll();
+}
+
+function setPortCount(){
+  if(selected.type!=='device') return;
+  const d = devices.find(x=>x.id===selected.id);
+  const cur = d.ports.length;
+  const ans = prompt('Количество портов', String(cur));
+  if(ans===null) return;
+  const n = Math.max(1, Math.min(96, parseInt(ans,10) || cur));
+  if(n < cur){
+    for(let i=n; i<cur; i++){
+      if(isPortUsed(d.id, i)){
+        alert('Нельзя уменьшить: есть занятые порты с номера '+(i+1)+'.');
+        return;
+      }
+    }
+    d.ports = d.ports.slice(0, n);
+  } else {
+    for(let i=cur; i<n; i++){
+      d.ports.push(makePort(i+1, 'Порт '+(i+1), 'RJ-45', 'LAN', 'F/UTP Cat.6', 'out'));
+    }
+  }
+  renderAll();
+}
+
+/* =================================================================
+   SECTION 8 — Cable CRUD & auto-mark
+================================================================= */
+
+function chooseSignal(a, b){
+  if(a.signal === b.signal) return a.signal;
+  /* priority order */
+  const prio = ['HDBaseT','HDMI','DisplayPort','USB Control','KVM','Dante',
+    'Audio','Speaker','PoE','LAN','WAN','RS-232','IR','GPIO','Power','Reserve'];
+  for(const s of prio) if(a.signal===s || b.signal===s) return s;
+  return 'LAN';
+}
+function chooseCable(sig){
+  return SIGNAL_DEFAULT_CABLE[sig] || 'F/UTP Cat.6';
+}
+function nextCableMark(sig){
+  const p = SIGNAL_PREFIX[sig] || 'TL';
+  counters['cable_'+p] = (counters['cable_'+p]||0) + 1;
+  return `${p}.34/1-${counters['cable_'+p]}`;
+}
+
+function createCable(fd, fp, td, tp){
+  if(fd===td && fp===tp) return;
+  /* Prevent duplicate */
+  if(cables.some(c=>(c.fromDeviceId===fd && c.fromPortIndex===fp) ||
+                    (c.toDeviceId===fd && c.toPortIndex===fp) ||
+                    (c.fromDeviceId===td && c.fromPortIndex===tp) ||
+                    (c.toDeviceId===td && c.toPortIndex===tp))){
+    if(!confirm('Один из портов уже подключён. Всё равно создать кабель?')) return;
+  }
+  const da = devices.find(d=>d.id===fd);
+  const db = devices.find(d=>d.id===td);
+  if(!da || !db) return;
+  const pa = da.ports[fp], pb = db.ports[tp];
+  const sig = chooseSignal(pa, pb);
+  const c = {
+    id: uid(),
+    mark: nextCableMark(sig),
+    fromDeviceId: fd, fromPortIndex: fp,
+    toDeviceId: td, toPortIndex: tp,
+    signal: sig,
+    cable: chooseCable(sig),
+    lengthM: 0,
+    routeGofra: '', routeChannel: '', routeTray: '', routeOpen: '',
+    note: '',
+    labelHidden: false,
+  };
+  c.lengthM = calcCableLength(c);
+  cables.push(c);
+  selected = { type:'cable', id:c.id };
+  renderAll();
+  setStatus('Кабель создан: '+c.mark);
+}
+
+function deleteCable(id){ cables = cables.filter(c=>c.id!==id) }
+
+function calcCableLength(c){
+  const a = getPortWorldPos(c.fromDeviceId, c.fromPortIndex);
+  const b = getPortWorldPos(c.toDeviceId, c.toPortIndex);
+  if(!a || !b) return 0;
+  const dx = Math.abs(a.x - b.x);
+  const dy = Math.abs(a.y - b.y);
+  const m = (dx + dy) / project.pxPerM * (1 + project.reservePct/100);
+  return Math.ceil(m);
+}
+
+/* =================================================================
+   SECTION 9 — Port world coordinates
+   The position of a port's connection dot is computed by reading
+   the rendered .port-row's offset *within the device DOM* and
+   adding the device's stage coordinates. This is done in
+   computePortPositions() after each renderStage().
+================================================================= */
+
+const portPosCache = new Map();  // key: did|pi -> { x, y, side: 'left'|'right' }
+
+function computePortPositions(){
+  portPosCache.clear();
+  devices.forEach(d=>{
+    const devEl = document.querySelector(`.device[data-id="${d.id}"]`);
+    if(!devEl) return;
+    const devRect = devEl.getBoundingClientRect();
+    devEl.querySelectorAll('.port-row[data-pi]').forEach(row=>{
+      const pi = +row.dataset.pi;
+      const side = row.dataset.side;  // 'left' | 'right'
+      const r = row.getBoundingClientRect();
+      /* Convert client coords to stage coords */
+      const cy = r.top + r.height/2;
+      const stageRect = stage.getBoundingClientRect();
+      const sx = (side==='left' ? devRect.left : devRect.right);
+      const x = (sx - stageRect.left) / zoom;
+      const y = (cy - stageRect.top) / zoom;
+      portPosCache.set(d.id+'|'+pi, { x, y, side });
+    });
+  });
+}
+
+function getPortWorldPos(did, pi){
+  return portPosCache.get(did+'|'+pi) || null;
+}
+
+/* =================================================================
+   SECTION 10 — Stage render
+================================================================= */
+
+function renderAll(){
+  renderStage();
+  renderInspector();
+  renderJournal();
+}
+
+function renderStage(){
+  /* Remove all existing rooms, devices, port dots, sheet */
+  stage.querySelectorAll('.room,.device,.port-dot,.sheet').forEach(el=>el.remove());
+
+  /* Sheet */
+  if(document.getElementById('layerSheet').checked) renderSheet();
+
+  /* Rooms */
+  if(document.getElementById('layerRooms').checked){
+    rooms.forEach(r=>stage.appendChild(roomEl(r)));
+  }
+
+  /* Devices */
+  if(document.getElementById('layerDevices').checked){
+    devices.forEach(d=>stage.appendChild(deviceEl(d)));
+  }
+
+  /* Port positions & wires & port dots */
+  /* Use requestAnimationFrame so DOM has laid out */
+  requestAnimationFrame(()=>{
+    computePortPositions();
+    renderWires();
+    renderPortDots();
+  });
+}
+
+/* ----- Sheet (paper frame + title block) ----- */
+function sheetSize(){
+  /* mm scaled to px (1mm = ~3.78px @ pxPerM=50). We use simplified: */
+  if(project.sheet==='A1') return { w: 4200, h: 2970 };
+  if(project.sheet==='A2') return { w: 2970, h: 2100 };
+  return { w: 2100, h: 1485 };  // A3
+}
+function renderSheet(){
+  const sz = sheetSize();
+  const el = document.createElement('div');
+  el.className = 'sheet';
+  el.style.width = sz.w+'px';
+  el.style.height = sz.h+'px';
+  el.innerHTML = `
+    <div class="title-block">
+      <div>Изм.</div>
+      <div class="big editable span2" onclick="editProjectField('sheetTitle','Название схемы')">${esc(project.sheetTitle)}</div>
+      <div class="editable" onclick="editProjectField('sheet','Формат')">Формат ${esc(project.sheet)}</div>
+
+      <div>Разраб.</div>
+      <div class="editable" onclick="editProjectField('sheetDev','Разработал')">${esc(project.sheetDev||'—')}</div>
+      <div class="editable" onclick="editProjectField('sheetCode','Шифр')">${esc(project.sheetCode)}</div>
+      <div class="editable" onclick="editProjectField('sheetStage','Стадия')">${esc(project.sheetStage)}</div>
+
+      <div>Пров.</div>
+      <div class="editable" onclick="editProjectField('sheetChk','Проверил')">${esc(project.sheetChk||'—')}</div>
+      <div class="editable span2" onclick="editProjectField('sheetSection','Раздел')">${esc(project.sheetSection)}</div>
+
+      <div>Дата</div>
+      <div class="editable" onclick="editProjectField('sheetDate','Дата')">${esc(project.sheetDate)}</div>
+      <div class="editable" onclick="editProjectField('sheetNo','Лист №')">Лист ${esc(project.sheetNo)}</div>
+      <div class="editable" onclick="editProjectField('sheetNote','Примечание')">${esc(project.sheetNote||'—')}</div>
+
+      <div class="span3 editable" onclick="openSheetEditor()" style="justify-content:center;font-weight:700;background:#f8fafc">Параметры листа…</div>
+      <div></div>
+    </div>`;
+  stage.appendChild(el);
+}
+function editProjectField(key, label){
+  const v = prompt(label, project[key]||'');
+  if(v!==null){ project[key] = v; renderAll() }
+}
+
+/* ----- Room element ----- */
+function roomEl(r){
+  const el = document.createElement('div');
+  el.className = 'room' + (selected.type==='room'&&selected.id===r.id ? ' selected' : '');
+  el.dataset.id = r.id;
+  el.style.left = r.x+'px';
+  el.style.top = r.y+'px';
+  el.style.width = r.w+'px';
+  el.style.height = r.h+'px';
+  const showDims = document.getElementById('layerDims').checked;
+  el.innerHTML =
+    `<div class="room-label">${esc(r.roomNo)} — ${esc(r.name)}</div>` +
+    (showDims ? `<div class="dim-h">${(r.w/project.pxPerM).toFixed(1)} м</div>
+                  <div class="dim-v">${(r.h/project.pxPerM).toFixed(1)} м</div>` : '') +
+    `<div class="dev-delete">×</div>
+     <div class="dev-handle"></div>`;
+
+  el.querySelector('.room-label').addEventListener('dblclick', e=>{
+    e.stopPropagation();
+    const v = prompt('Название помещения', r.name);
+    if(v!==null){ r.name = v; renderAll() }
+  });
+  el.querySelector('.dev-delete').addEventListener('click', e=>{
+    e.stopPropagation();
+    if(confirm('Удалить помещение?')){ deleteRoom(r.id); selected={type:null,id:null}; renderAll() }
+  });
+  el.querySelector('.dev-handle').addEventListener('mousedown', e=>{
+    e.stopPropagation();
+    selected = { type:'room', id:r.id };
+    beginResize(e, r, 'room');
+  });
+  el.addEventListener('mousedown', e=>{
+    if(e.target.closest('.dev-handle,.dev-delete,.room-label')) return;
+    selected = { type:'room', id:r.id };
+    beginDrag(e, r);
+    renderInspector();
+  });
+  return el;
+}
+
+/* ----- Device element (CSS grid layout) ----- */
+function deviceEl(d){
+  const el = document.createElement('div');
+  el.className = `device type-${d.type}` + (selected.type==='device'&&selected.id===d.id ? ' selected' : '');
+  el.dataset.id = d.id;
+  el.style.left = d.x+'px';
+  el.style.top = d.y+'px';
+  el.style.width = d.w+'px';
+  /* height is auto — grid sizing */
+
+  /* Header + meta */
+  const metaItems = [
+    d.specNo    ? `<div class="meta-item"><b>Спец.</b>${esc(d.specNo)}</div>` : '',
+    d.rackUnit  ? `<div class="meta-item"><b>Unit</b>${esc(d.rackUnit)}</div>` : '',
+    d.networkName ? `<div class="meta-item"><b>Сеть</b>${esc(d.networkName)}</div>` : '',
+    d.rackName  ? `<div class="meta-item"><b>Шкаф</b>${esc(d.rackName)}</div>` : '',
+    d.roomNo    ? `<div class="meta-item"><b>Пом.</b>${esc(d.roomNo)}</div>` : '',
+    `<div class="meta-item"><b>Порты</b>${d.ports.filter((_,i)=>isPortUsed(d.id,i)).length}/${d.ports.length}</div>`,
+  ].filter(Boolean).join('');
+
+  const header = `
+    <div class="dev-tag">${esc(d.code)}</div>
+    ${d.roomNo ? `<div class="dev-room">${esc(d.roomNo)}</div>` : ''}
+    <div class="dev-header">
+      <div class="dev-icon">${d.icon||'⬛'}</div>
+      <div class="dev-titles">
+        <div class="dev-name">${esc(d.title)}</div>
+        <div class="dev-model">${esc(d.model)}</div>
+      </div>
+    </div>
+    <div class="dev-meta">${metaItems}</div>`;
+
+  /* Body */
+  let bodyHtml;
+  if(d.layout === 'patch'){
+    bodyHtml = renderPatchBody(d);
+  } else {
+    bodyHtml = renderOrdinaryBody(d);
+  }
+
+  el.innerHTML = header + bodyHtml + `<div class="dev-delete">×</div><div class="dev-handle"></div>`;
+
+  /* Event wiring */
+  el.querySelector('.dev-header').addEventListener('mousedown', e=>{
+    if(e.target.closest('.dev-handle,.dev-delete')) return;
+    selected = { type:'device', id:d.id };
+    beginDrag(e, d);
+    renderInspector();
+  });
+  el.querySelector('.dev-delete').addEventListener('click', e=>{
+    e.stopPropagation();
+    if(confirm('Удалить блок «'+d.title+'»?')){
+      deleteDevice(d.id);
+      selected = { type:null, id:null };
+      renderAll();
+    }
+  });
+  el.querySelector('.dev-handle').addEventListener('mousedown', e=>{
+    e.stopPropagation();
+    selected = { type:'device', id:d.id };
+    beginResize(e, d, 'device');
+  });
+  /* Click anywhere selects the device */
+  el.addEventListener('mousedown', e=>{
+    if(e.target.closest('.dev-handle,.dev-delete')) return;
+    if(selected.type!=='device' || selected.id!==d.id){
+      selected = { type:'device', id:d.id };
+      renderAll();
+    }
+  });
+  /* Right-click → context menu */
+  el.addEventListener('contextmenu', e=>{
+    e.preventDefault(); e.stopPropagation();
+    selected = { type:'device', id:d.id };
+    renderInspector();
+    openContextMenu(e);
+  });
+  return el;
+}
+
+function renderOrdinaryBody(d){
+  const ins  = d.ports.map((p,i)=>({p,i})).filter(x=>x.p.direction==='in');
+  const outs = d.ports.map((p,i)=>({p,i})).filter(x=>x.p.direction!=='in');
+  const maxRows = Math.max(ins.length, outs.length, 1);
+
+  const inHtml = ins.map(({p,i})=>portRowHtml(d.id, p, i, 'left', 'in')).join('') ||
+    '<div style="color:#94a3b8;font-size:10px;text-align:center;padding:4px">—</div>';
+  const outHtml = outs.map(({p,i})=>portRowHtml(d.id, p, i, 'right', 'out')).join('') ||
+    '<div style="color:#94a3b8;font-size:10px;text-align:center;padding:4px">—</div>';
+
+  return `<div class="dev-body ord">
+    <div class="col-head">Вход</div>
+    <div class="col-head">Выход</div>
+    <div class="col">${inHtml}</div>
+    <div class="col">${outHtml}</div>
+  </div>`;
+}
+
+function renderPatchBody(d){
+  /* For patch panel: ports with iface='Krone' go to left column,
+     ports with iface='RJ-45' go to right column. */
+  const krone = d.ports.map((p,i)=>({p,i})).filter(x=>x.p.interface==='Krone');
+  const rj45  = d.ports.map((p,i)=>({p,i})).filter(x=>x.p.interface==='RJ-45');
+
+  const kHtml = krone.map(({p,i})=>portRowHtml(d.id, p, i, 'left', 'krone')).join('');
+  const rHtml = rj45.map(({p,i})=>portRowHtml(d.id, p, i, 'right', 'rj45')).join('');
+
+  return `<div class="dev-body patch">
+    <div class="col-head">Krone</div>
+    <div class="col-head">RJ-45</div>
+    <div class="col">${kHtml}</div>
+    <div class="col">${rHtml}</div>
+  </div>`;
+}
+
+function portRowHtml(did, p, pi, side, kind){
+  const used = isPortUsed(did, pi) ? ' used' : '';
+  return `<div class="port-row ${kind}${used}" data-pi="${pi}" data-side="${side}">
+    <span class="pnum">${esc(p.num)}</span>
+    <span class="pname" title="${esc(p.name)}">${esc(p.name)}</span>
+    <span class="psig">${esc(p.signal)}</span>
+  </div>`;
+}
+
+/* ----- Port connection dots (placed by computePortPositions) ----- */
+function renderPortDots(){
+  if(!document.getElementById('layerPorts').checked) return;
+  devices.forEach(d=>{
+    d.ports.forEach((p, pi)=>{
+      const pos = getPortWorldPos(d.id, pi);
+      if(!pos) return;
+      const dot = document.createElement('div');
+      const used = isPortUsed(d.id, pi) ? ' used' : '';
+      let kind;
+      if(d.layout === 'patch'){
+        kind = p.interface === 'Krone' ? 'krone' : 'rj45';
+      } else {
+        kind = p.direction === 'in' ? 'in' : 'out';
+      }
+      const active = (pendingPort && pendingPort.did===d.id && pendingPort.pi===pi) ? ' active' : '';
+      dot.className = `port-dot ${kind}${used}${active}`;
+      dot.style.left = (pos.x - 5.5) + 'px';
+      dot.style.top  = (pos.y - 5.5) + 'px';
+      dot.dataset.tip = `${d.code} · ${p.direction==='in'?'IN':'OUT'} ${p.num} · ${p.name} · ${p.signal}`;
+      dot.addEventListener('click', e=>{
+        e.stopPropagation();
+        clickPort(d.id, pi);
+      });
+      stage.appendChild(dot);
+    });
+  });
+}
+
+function clickPort(did, pi){
+  if(tool !== 'connect') setTool('connect');
+  if(!pendingPort){
+    pendingPort = { did, pi };
+    renderStage();
+    setStatus('Выбран первый порт. Кликните по второму, чтобы создать кабель.');
+    return;
+  }
+  if(pendingPort.did===did && pendingPort.pi===pi){
+    pendingPort = null;
+    renderStage();
+    setStatus('Выбор первого порта отменён.');
+    return;
+  }
+  createCable(pendingPort.did, pendingPort.pi, did, pi);
+  pendingPort = null;
+}
+
+/* ----- Wires (SVG orthogonal paths) ----- */
+function renderWires(){
+  wires.innerHTML = '';
+  if(!document.getElementById('layerCables').checked) return;
+  const showLabels = document.getElementById('layerLabels').checked;
+  cables.forEach((c, idx)=>{
+    const a = getPortWorldPos(c.fromDeviceId, c.fromPortIndex);
+    const b = getPortWorldPos(c.toDeviceId, c.toPortIndex);
+    if(!a || !b) return;
+    /* Stub direction from each side */
+    const sa = a.side==='right' ? 1 : -1;
+    const sb = b.side==='right' ? 1 : -1;
+    const stub = 32;
+    const x1 = a.x + sa*stub;
+    const x2 = b.x + sb*stub;
+    /* Mid X for orthogonal routing */
+    let mx;
+    if(sa===1 && sb===-1){       // left→right: meeting point between
+      mx = (x1 + x2) / 2;
+    } else if(sa===-1 && sb===1){
+      mx = (x1 + x2) / 2;
+    } else {
+      /* same side: go around */
+      mx = sa===1 ? Math.max(x1, x2) + 40 : Math.min(x1, x2) - 40;
+    }
+    const dpath = `M${a.x},${a.y} L${x1},${a.y} L${mx},${a.y} L${mx},${b.y} L${x2},${b.y} L${b.x},${b.y}`;
+    const isSel = selected.type==='cable' && selected.id===c.id;
+
+    /* Hit area */
+    const hit = document.createElementNS('http://www.w3.org/2000/svg','path');
+    hit.setAttribute('d', dpath);
+    hit.setAttribute('class', 'wire-hit');
+    hit.style.pointerEvents = 'stroke';
+    hit.addEventListener('click', ev=>{
+      ev.stopPropagation();
+      selected = { type:'cable', id:c.id };
+      renderAll();
+    });
+    wires.appendChild(hit);
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', dpath);
+    path.setAttribute('class', 'wire' + (isSel ? ' selected' : ''));
+    wires.appendChild(path);
+
+    if((showLabels && !c.labelHidden) || isSel){
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', mx + 4);
+      t.setAttribute('y', (a.y + b.y)/2 - 4);
+      t.setAttribute('class', 'wire-label');
+      t.textContent = c.mark;
+      wires.appendChild(t);
+    }
+  });
+}
+
+/* =================================================================
+   SECTION 11 — Drag / Resize
+================================================================= */
+
+function beginDrag(e, obj){
+  if(e.button !== 0) return;
+  const sx = e.clientX, sy = e.clientY;
+  const ox = obj.x, oy = obj.y;
+  function mv(a){
+    obj.x = snap(ox + (a.clientX-sx)/zoom);
+    obj.y = snap(oy + (a.clientY-sy)/zoom);
+    /* Move element directly for smoothness */
+    const el = document.querySelector(`[data-id="${obj.id}"]`);
+    if(el){ el.style.left = obj.x+'px'; el.style.top = obj.y+'px'; }
+    requestAnimationFrame(()=>{ computePortPositions(); renderWires(); refreshPortDots(); });
+  }
+  function up(){
+    window.removeEventListener('mousemove', mv);
+    window.removeEventListener('mouseup', up);
+    renderAll();
+  }
+  window.addEventListener('mousemove', mv);
+  window.addEventListener('mouseup', up);
+  e.preventDefault();
+}
+
+function beginResize(e, obj, type){
+  if(e.button !== 0) return;
+  const sx = e.clientX, sy = e.clientY;
+  const ow = obj.w, oh = obj.h || 200;
+  function mv(a){
+    obj.w = snap(Math.max(type==='room' ? 160 : 220, ow + (a.clientX-sx)/zoom));
+    if(type==='room'){
+      obj.h = snap(Math.max(120, oh + (a.clientY-sy)/zoom));
+    }
+    const el = document.querySelector(`[data-id="${obj.id}"]`);
+    if(el){
+      el.style.width = obj.w+'px';
+      if(type==='room') el.style.height = obj.h+'px';
+    }
+    requestAnimationFrame(()=>{ computePortPositions(); renderWires(); refreshPortDots(); });
+  }
+  function up(){
+    window.removeEventListener('mousemove', mv);
+    window.removeEventListener('mouseup', up);
+    renderAll();
+  }
+  window.addEventListener('mousemove', mv);
+  window.addEventListener('mouseup', up);
+  e.preventDefault();
+}
+
+/* refresh port dot positions without re-rendering all devices */
+function refreshPortDots(){
+  stage.querySelectorAll('.port-dot').forEach(el=>el.remove());
+  renderPortDots();
+}
+
+/* =================================================================
+   SECTION 12 — Inspector
+   Re-renders only on selection change or structural change.
+   Per-field inputs write directly to model; re-renders only what's needed.
+================================================================= */
+
+function renderInspector(){
+  if(!selected.type){
+    inspector.innerHTML = `<div class="hint">
+      Выберите блок, помещение или кабель, чтобы редактировать его параметры.
+      <br><br>
+      <b>Быстрые действия:</b><br>
+      • Двойной клик по библиотеке — добавить блок в центр<br>
+      • Перетащите блок мышью из библиотеки слева<br>
+      • Инструмент «Кабель»: клик по двум портам<br>
+      • Delete — удалить выбранное<br>
+      • Alt + перетаскивание / средняя кнопка — панорамирование<br>
+      • Ctrl + колесо — масштаб
+    </div>`;
+    return;
+  }
+  if(selected.type === 'device') return renderDeviceInspector();
+  if(selected.type === 'room') return renderRoomInspector();
+  if(selected.type === 'cable') return renderCableInspector();
+}
+
+function renderDeviceInspector(){
+  const d = devices.find(x=>x.id===selected.id);
+  if(!d){ selected={type:null,id:null}; renderInspector(); return }
+
+  const ins  = d.ports.map((p,i)=>({p,i})).filter(x=>x.p.direction==='in').length;
+  const outs = d.ports.length - ins;
+
+  inspector.innerHTML = `
+    <div class="insp-section">
+      <div class="insp-title">
+        <span>${d.icon} Блок · ${esc(d.title)}</span>
+        <span>
+          <button onclick="duplicateDevice('${d.id}')" title="Дублировать">⎘</button>
+          <button class="danger" onclick="if(confirm('Удалить?')){deleteDevice('${d.id}');selected={type:null,id:null};renderAll()}">×</button>
+        </span>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Обозначение</label>
+          <input data-k="code" value="${esc(d.code)}"></div>
+        <div class="field"><label>№ по спец.</label>
+          <input data-k="specNo" value="${esc(d.specNo)}"></div>
+      </div>
+      <div class="field"><label>Наименование</label>
+        <input data-k="title" value="${esc(d.title)}"></div>
+      <div class="field"><label>Модель</label>
+        <input data-k="model" value="${esc(d.model)}"></div>
+      <div class="grid2">
+        <div class="field"><label>Unit / место в стойке</label>
+          <input data-k="rackUnit" value="${esc(d.rackUnit)}"></div>
+        <div class="field"><label>Шкаф / стойка</label>
+          <input data-k="rackName" value="${esc(d.rackName)}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>№ помещения</label>
+          <input data-k="roomNo" value="${esc(d.roomNo)}"></div>
+        <div class="field"><label>Сеть (имя в сети)</label>
+          <input data-k="networkName" value="${esc(d.networkName)}"></div>
+      </div>
+      <div class="field"><label>Комментарий</label>
+        <input data-k="note" value="${esc(d.note)}"></div>
+      <div class="grid2">
+        <div class="field"><label>Ширина блока, px</label>
+          <input data-k="w" type="number" min="220" step="20" value="${d.w}"></div>
+        <div class="field"><label>Иконка</label>
+          <input data-k="icon" value="${esc(d.icon)}"></div>
+      </div>
+    </div>
+
+    <div class="insp-section">
+      <div class="insp-title">
+        <span>Порты (вход: ${ins} / выход: ${outs})</span>
+        <span>
+          <button onclick="addPort('in')" title="+ Вход">+IN</button>
+          <button onclick="addPort('out')" title="+ Выход">+OUT</button>
+          <button onclick="setPortCount()">N…</button>
+        </span>
+      </div>
+      ${portEditorHtml(d)}
+    </div>`;
+
+  /* Wire up text inputs — write directly to model, re-render only relevant parts */
+  inspector.querySelectorAll('input[data-k],select[data-k]').forEach(input=>{
+    const k = input.dataset.k;
+    input.addEventListener('input', ()=>{
+      let v = input.value;
+      if(k === 'w'){
+        v = Math.max(220, parseInt(v,10) || 260);
+      }
+      d[k] = v;
+      /* Update visible block lazily */
+      updateDeviceDom(d);
+    });
+  });
+
+  /* Wire up per-port inputs */
+  inspector.querySelectorAll('[data-pk]').forEach(input=>{
+    const pi = +input.dataset.pi;
+    const k = input.dataset.pk;
+    input.addEventListener('input', ()=>{
+      d.ports[pi][k] = input.value;
+      updateDeviceDom(d);
+    });
+    input.addEventListener('change', ()=>{
+      /* On select change (signal / direction), also affect column placement */
+      if(k==='direction' || k==='interface' || k==='signal'){
+        renderStage();
+      }
+    });
+  });
+}
+
+function portEditorHtml(d){
+  return `
+    <div class="port-edit head">
+      <div>№</div><div>Напр.</div><div>Имя</div><div>Интерф.</div>
+      <div>Сигнал</div><div>Кабель</div><div></div>
+    </div>
+    <div class="port-list">
+      ${d.ports.map((p,i)=>{
+        const used = isPortUsed(d.id, i);
+        const dirSel = d.layout==='patch' ?
+          `<select data-pk="interface" data-pi="${i}">
+            <option value="Krone" ${p.interface==='Krone'?'selected':''}>Krone</option>
+            <option value="RJ-45" ${p.interface==='RJ-45'?'selected':''}>RJ-45</option>
+          </select>` :
+          `<select data-pk="direction" data-pi="${i}">
+            <option value="in" ${p.direction==='in'?'selected':''}>Вход</option>
+            <option value="out" ${p.direction==='out'?'selected':''}>Выход</option>
+          </select>`;
+        return `<div class="port-edit">
+          <input data-pk="num" data-pi="${i}" value="${esc(p.num)}" class="pi-num">
+          ${dirSel}
+          <input data-pk="name" data-pi="${i}" value="${esc(p.name)}">
+          <input data-pk="interface" data-pi="${i}" value="${esc(p.interface)}" ${d.layout==='patch'?'style="display:none"':''}>
+          <select data-pk="signal" data-pi="${i}">
+            ${SIGNAL_TYPES.map(s=>`<option ${p.signal===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+          <input data-pk="cable" data-pi="${i}" value="${esc(p.cable)}">
+          <button class="pi-del${used?' used':''}" onclick="deletePort('${d.id}',${i})" title="${used?'Порт занят':'Удалить порт'}">×</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+/* Update only the changed device's DOM without rebuilding the whole stage.
+   Used while typing in the inspector — keeps focus. */
+function updateDeviceDom(d){
+  const el = document.querySelector(`.device[data-id="${d.id}"]`);
+  if(!el) return;
+  /* Update header text bits */
+  const tag = el.querySelector('.dev-tag'); if(tag) tag.textContent = d.code;
+  const name = el.querySelector('.dev-name'); if(name) name.textContent = d.title;
+  const model = el.querySelector('.dev-model'); if(model) model.textContent = d.model;
+  const icon = el.querySelector('.dev-icon'); if(icon) icon.textContent = d.icon || '⬛';
+  /* Update meta */
+  const meta = el.querySelector('.dev-meta');
+  if(meta){
+    meta.innerHTML = [
+      d.specNo    ? `<div class="meta-item"><b>Спец.</b>${esc(d.specNo)}</div>` : '',
+      d.rackUnit  ? `<div class="meta-item"><b>Unit</b>${esc(d.rackUnit)}</div>` : '',
+      d.networkName ? `<div class="meta-item"><b>Сеть</b>${esc(d.networkName)}</div>` : '',
+      d.rackName  ? `<div class="meta-item"><b>Шкаф</b>${esc(d.rackName)}</div>` : '',
+      d.roomNo    ? `<div class="meta-item"><b>Пом.</b>${esc(d.roomNo)}</div>` : '',
+      `<div class="meta-item"><b>Порты</b>${d.ports.filter((_,i)=>isPortUsed(d.id,i)).length}/${d.ports.length}</div>`,
+    ].filter(Boolean).join('');
+  }
+  /* Update width */
+  el.style.width = d.w+'px';
+  /* Update port row text */
+  d.ports.forEach((p, i)=>{
+    const row = el.querySelector(`.port-row[data-pi="${i}"]`);
+    if(row){
+      row.querySelector('.pnum').textContent = p.num;
+      row.querySelector('.pname').textContent = p.name;
+      row.querySelector('.psig').textContent = p.signal;
+    }
+  });
+  /* Re-compute port positions and wires after layout */
+  requestAnimationFrame(()=>{
+    computePortPositions();
+    renderWires();
+    refreshPortDots();
+  });
+}
+
+function renderRoomInspector(){
+  const r = rooms.find(x=>x.id===selected.id);
+  if(!r){ selected={type:null,id:null}; renderInspector(); return }
+  inspector.innerHTML = `
+    <div class="insp-section">
+      <div class="insp-title">
+        <span>🏢 Помещение</span>
+        <span>
+          <button onclick="duplicateRoom('${r.id}')">⎘</button>
+          <button class="danger" onclick="if(confirm('Удалить?')){deleteRoom('${r.id}');selected={type:null,id:null};renderAll()}">×</button>
+        </span>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>№ помещения</label><input data-rk="roomNo" value="${esc(r.roomNo)}"></div>
+        <div class="field"><label>Название</label><input data-rk="name" value="${esc(r.name)}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Ширина, px</label><input data-rk="w" type="number" step="20" value="${r.w}"></div>
+        <div class="field"><label>Высота, px</label><input data-rk="h" type="number" step="20" value="${r.h}"></div>
+      </div>
+      <div class="hint">Размер в метрах: ${(r.w/project.pxPerM).toFixed(1)} × ${(r.h/project.pxPerM).toFixed(1)} м (масштаб ${project.pxPerM} px/м).</div>
+    </div>`;
+  inspector.querySelectorAll('[data-rk]').forEach(inp=>{
+    const k = inp.dataset.rk;
+    inp.addEventListener('input', ()=>{
+      let v = inp.value;
+      if(k==='w'||k==='h') v = Math.max(60, parseInt(v,10) || 100);
+      r[k] = v;
+      const el = document.querySelector(`.room[data-id="${r.id}"]`);
+      if(el){
+        if(k==='w') el.style.width = r.w+'px';
+        if(k==='h') el.style.height = r.h+'px';
+        if(k==='roomNo' || k==='name'){
+          const lbl = el.querySelector('.room-label');
+          if(lbl) lbl.textContent = `${r.roomNo} — ${r.name}`;
+        }
+      }
+    });
+  });
+}
+
+function renderCableInspector(){
+  const c = cables.find(x=>x.id===selected.id);
+  if(!c){ selected={type:null,id:null}; renderInspector(); return }
+  const da = devices.find(d=>d.id===c.fromDeviceId);
+  const db = devices.find(d=>d.id===c.toDeviceId);
+  const portOptions = (did)=> {
+    const d = devices.find(x=>x.id===did);
+    if(!d) return '';
+    return d.ports.map((p,i)=>`<option value="${i}">${esc(p.num)} · ${esc(p.name)} · ${esc(p.signal)}</option>`).join('');
+  };
+  const deviceOptions = ()=> devices.map(d=>`<option value="${d.id}">${esc(d.code)} · ${esc(d.title)}</option>`).join('');
+
+  inspector.innerHTML = `
+    <div class="insp-section">
+      <div class="insp-title">
+        <span>🔌 Кабель ${esc(c.mark)}</span>
+        <span><button class="danger" onclick="if(confirm('Удалить кабель?')){deleteCable('${c.id}');selected={type:null,id:null};renderAll()}">×</button></span>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Маркировка</label><input data-ck="mark" value="${esc(c.mark)}"></div>
+        <div class="field"><label>Длина, м</label><input data-ck="lengthM" type="number" step="1" value="${c.lengthM}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Тип сигнала</label>
+          <select data-ck="signal">${SIGNAL_TYPES.map(s=>`<option ${c.signal===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Тип кабеля</label>
+          <select data-ck="cable">${CABLE_TYPES.map(s=>`<option ${c.cable===s?'selected':''}>${s}</option>`).join('')}</select>
+        </div>
+      </div>
+
+      <div class="insp-title" style="margin-top:8px">Начало</div>
+      <div class="field"><label>Устройство</label>
+        <select data-ck="fromDeviceId">${deviceOptions()}</select></div>
+      <div class="field"><label>Порт</label>
+        <select data-ck="fromPortIndex">${portOptions(c.fromDeviceId)}</select></div>
+
+      <div class="insp-title" style="margin-top:8px">Конец</div>
+      <div class="field"><label>Устройство</label>
+        <select data-ck="toDeviceId">${deviceOptions()}</select></div>
+      <div class="field"><label>Порт</label>
+        <select data-ck="toPortIndex">${portOptions(c.toDeviceId)}</select></div>
+
+      <div class="insp-title" style="margin-top:8px">Способ прокладки (м)</div>
+      <div class="grid2">
+        <div class="field"><label>В гофре</label><input data-ck="routeGofra" value="${esc(c.routeGofra)}"></div>
+        <div class="field"><label>В кабель-канале</label><input data-ck="routeChannel" value="${esc(c.routeChannel)}"></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>В лотке</label><input data-ck="routeTray" value="${esc(c.routeTray)}"></div>
+        <div class="field"><label>Открыто</label><input data-ck="routeOpen" value="${esc(c.routeOpen)}"></div>
+      </div>
+
+      <div class="field"><label>Примечание</label><input data-ck="note" value="${esc(c.note)}"></div>
+
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button onclick="recalcCable('${c.id}')">Пересчитать длину</button>
+        <label style="display:inline-flex;align-items:center;gap:5px;font-size:11px;text-transform:none;margin:0">
+          <input type="checkbox" ${c.labelHidden?'':'checked'} onchange="cables.find(x=>x.id==='${c.id}').labelHidden=!this.checked;renderStage()" style="width:auto"> Подпись на схеме
+        </label>
+      </div>
+    </div>`;
+
+  /* Set selected values for selects that have dynamic options */
+  const fdSel = inspector.querySelector('[data-ck="fromDeviceId"]');
+  const tdSel = inspector.querySelector('[data-ck="toDeviceId"]');
+  const fpSel = inspector.querySelector('[data-ck="fromPortIndex"]');
+  const tpSel = inspector.querySelector('[data-ck="toPortIndex"]');
+  if(fdSel) fdSel.value = c.fromDeviceId;
+  if(tdSel) tdSel.value = c.toDeviceId;
+  if(fpSel) fpSel.value = c.fromPortIndex;
+  if(tpSel) tpSel.value = c.toPortIndex;
+
+  inspector.querySelectorAll('[data-ck]').forEach(inp=>{
+    const k = inp.dataset.ck;
+    inp.addEventListener('input', ()=>{
+      let v = inp.value;
+      if(k==='fromPortIndex' || k==='toPortIndex' || k==='lengthM') v = parseInt(v,10) || 0;
+      c[k] = v;
+      /* If endpoint device changes, refresh port dropdown */
+      if(k==='fromDeviceId'){
+        c.fromPortIndex = 0;
+        renderInspector();  // structural — full re-render is ok
+        return;
+      }
+      if(k==='toDeviceId'){
+        c.toPortIndex = 0;
+        renderInspector();
+        return;
+      }
+      renderJournal();
+      renderWires();
+    });
+    inp.addEventListener('change', ()=>{
+      if(k==='fromPortIndex' || k==='toPortIndex'){
+        renderStage();   /* update port-used state */
+        renderJournal();
+      }
+    });
+  });
+}
+
+function recalcCable(id){
+  const c = cables.find(x=>x.id===id);
+  if(!c) return;
+  c.lengthM = calcCableLength(c);
+  renderInspector();
+  renderJournal();
+}
+
+/* =================================================================
+   SECTION 13 — Cable journal
+================================================================= */
+
+function renderJournal(){
+  const rows = cables.map((c, i)=>{
+    const da = devices.find(d=>d.id===c.fromDeviceId);
+    const db = devices.find(d=>d.id===c.toDeviceId);
+    const pa = da ? da.ports[c.fromPortIndex] : null;
+    const pb = db ? db.ports[c.toPortIndex] : null;
+    const sel = selected.type==='cable'&&selected.id===c.id ? ' class="selected"' : '';
+    return `<tr${sel} onclick="selected={type:'cable',id:'${c.id}'};renderAll()">
+      <td>${i+1}</td>
+      <td>${esc(c.mark)}</td>
+      <td>${esc(c.cable)}</td>
+      <td>${esc(da?.roomNo||'')}</td>
+      <td>${esc(da?.code||'?')} ${esc(da?.title||'')}</td>
+      <td>${pa ? esc(pa.num+' '+pa.name) : '?'}</td>
+      <td>${esc(db?.roomNo||'')}</td>
+      <td>${esc(db?.code||'?')} ${esc(db?.title||'')}</td>
+      <td>${pb ? esc(pb.num+' '+pb.name) : '?'}</td>
+      <td>${esc(c.signal)}</td>
+      <td>${esc(c.routeGofra)}</td>
+      <td>${esc(c.routeChannel)}</td>
+      <td>${esc(c.routeTray)}</td>
+      <td>${esc(c.routeOpen)}</td>
+      <td>${c.lengthM}</td>
+      <td>${esc(c.note)}</td>
+    </tr>`;
+  }).join('');
+
+  journalWrap.innerHTML = `<table class="journal">
+    <thead><tr>
+      <th rowspan="2">№</th>
+      <th rowspan="2">Маркировка</th>
+      <th rowspan="2">Тип кабеля</th>
+      <th colspan="3">Начало</th>
+      <th colspan="3">Конец</th>
+      <th rowspan="2">Сигнал</th>
+      <th colspan="4">Способ прокладки, м</th>
+      <th rowspan="2">Длина, м</th>
+      <th rowspan="2">Прим.</th>
+    </tr><tr>
+      <th>№ пом.</th><th>Оборудование</th><th>Порт</th>
+      <th>№ пом.</th><th>Оборудование</th><th>Порт</th>
+      <th>гофра</th><th>канал</th><th>лоток</th><th>открыто</th>
+    </tr></thead>
+    <tbody>${rows || '<tr><td colspan="16" style="text-align:center;color:#94a3b8;padding:18px">Журнал пуст — соедините порты кабелями.</td></tr>'}</tbody>
+  </table>`;
+  document.getElementById('jCount').textContent = cables.length + ' кабел.';
+}
+
+/* =================================================================
+   SECTION 14 — Tools / view
+================================================================= */
+
+function setTool(t){
+  tool = t;
+  ['select','connect','pan'].forEach(name=>{
+    const b = document.getElementById('tool_'+name);
+    if(b) b.classList.toggle('active', name===t);
+  });
+  stageOuter.classList.toggle('tool-pan', t==='pan');
+  stageOuter.classList.toggle('tool-connect', t==='connect');
+  if(t!=='connect'){
+    pendingPort = null;
+    renderStage();
+  }
+}
+
+function zoomBy(k){
+  const nz = Math.max(0.15, Math.min(3, zoom*k));
+  /* Zoom around viewport center */
+  const r = stageOuter.getBoundingClientRect();
+  const cx = r.width/2, cy = r.height/2;
+  const wx = (cx-pan.x)/zoom, wy = (cy-pan.y)/zoom;
+  zoom = nz;
+  pan.x = cx - wx*zoom;
+  pan.y = cy - wy*zoom;
+  applyTransform();
+}
+
+function applyTransform(){
+  stage.style.transform = `translate(${pan.x}px,${pan.y}px) scale(${zoom})`;
+  document.getElementById('zoomLabel').textContent = Math.round(zoom*100)+'%';
+  /* Re-compute port positions because they depend on zoom-scaled coords via getBoundingClientRect */
+  requestAnimationFrame(()=>{ computePortPositions(); renderWires(); refreshPortDots(); });
+}
+
+function fitView(){
+  const sz = sheetSize();
+  const r = stageOuter.getBoundingClientRect();
+  const margin = 60;
+  const z = Math.min((r.width-margin*2)/sz.w, (r.height-margin*2)/sz.h);
+  zoom = Math.max(0.15, Math.min(2, z));
+  pan.x = (r.width - sz.w*zoom)/2;
+  pan.y = (r.height - sz.h*zoom)/2;
+  applyTransform();
+}
+
+function centerOnContent(){
+  if(!devices.length && !rooms.length){ fitView(); return }
+  let xs=[], ys=[], xs2=[], ys2=[];
+  const all = [...devices.map(d=>({x:d.x,y:d.y,w:d.w,h:240})), ...rooms.map(r=>({x:r.x,y:r.y,w:r.w,h:r.h}))];
+  all.forEach(o=>{ xs.push(o.x); ys.push(o.y); xs2.push(o.x+o.w); ys2.push(o.y+o.h) });
+  const x1=Math.min(...xs), y1=Math.min(...ys), x2=Math.max(...xs2), y2=Math.max(...ys2);
+  const r = stageOuter.getBoundingClientRect();
+  const margin = 60;
+  const z = Math.min((r.width-margin*2)/(x2-x1), (r.height-margin*2)/(y2-y1));
+  zoom = Math.max(0.2, Math.min(1, z));
+  pan.x = (r.width - (x2-x1)*zoom)/2 - x1*zoom;
+  pan.y = (r.height - (y2-y1)*zoom)/2 - y1*zoom;
+  applyTransform();
+}
+
+function setupStageEvents(){
+  let panning=false, sx=0, sy=0, op;
+  stageOuter.addEventListener('mousedown', e=>{
+    const isPan = tool==='pan' || e.altKey || e.button===1;
+    if(!isPan) return;
+    if(e.target.closest('.device,.room,.port-dot,.wire-hit')) return;
+    panning = true;
+    sx = e.clientX; sy = e.clientY; op = { ...pan };
+    stageOuter.classList.add('panning');
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', e=>{
+    if(!panning) return;
+    pan.x = op.x + e.clientX - sx;
+    pan.y = op.y + e.clientY - sy;
+    applyTransform();
+  });
+  window.addEventListener('mouseup', ()=>{
+    panning = false;
+    stageOuter.classList.remove('panning');
+  });
+  stageOuter.addEventListener('wheel', e=>{
+    if(!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    zoomBy(e.deltaY < 0 ? 1.1 : 0.9);
+  }, { passive:false });
+
+  /* Click empty area → deselect */
+  stageOuter.addEventListener('mousedown', e=>{
+    if(e.target.closest('.device,.room,.port-dot,.wire-hit,.title-block')) return;
+    if(tool==='pan' || e.altKey || e.button===1) return;
+    if(selected.type){
+      selected = { type:null, id:null };
+      renderAll();
+    }
+  });
+
+  /* Drag-drop from library */
+  stageOuter.addEventListener('dragover', e=>e.preventDefault());
+  stageOuter.addEventListener('drop', e=>{
+    e.preventDefault();
+    const idx = e.dataTransfer.getData('preset-idx');
+    if(idx === '' || idx==null) return;
+    const p = PRESETS[+idx];
+    const pt = worldPoint(e);
+    addDevice(p, snap(pt.x), snap(pt.y));
+  });
+
+  /* Right-click on empty → menu */
+  stageOuter.addEventListener('contextmenu', e=>{
+    if(e.target.closest('.device,.room')) return;
+    e.preventDefault();
+    openContextMenu(e);
+  });
+}
+
+/* =================================================================
+   SECTION 15 — Context menu
+================================================================= */
+
+function openContextMenu(e){
+  const items = [];
+  if(selected.type==='device'){
+    items.push({label:'Дублировать', fn:()=>duplicateDevice(selected.id)});
+    items.push({label:'Удалить блок', fn:()=>{if(confirm('Удалить блок?')){deleteDevice(selected.id);selected={type:null,id:null};renderAll()}}});
+    items.push('---');
+    items.push({label:'+ Вход', fn:()=>addPort('in')});
+    items.push({label:'+ Выход', fn:()=>addPort('out')});
+  } else if(selected.type==='room'){
+    items.push({label:'Дублировать', fn:()=>duplicateRoom(selected.id)});
+    items.push({label:'Удалить помещение', fn:()=>{if(confirm('Удалить?')){deleteRoom(selected.id);selected={type:null,id:null};renderAll()}}});
+  } else if(selected.type==='cable'){
+    items.push({label:'Удалить кабель', fn:()=>{if(confirm('Удалить кабель?')){deleteCable(selected.id);selected={type:null,id:null};renderAll()}}});
+    items.push({label:'Пересчитать длину', fn:()=>recalcCable(selected.id)});
+  }
+  if(items.length) items.push('---');
+  items.push({label:'+ Блок…', fn:openAddBlock});
+  items.push({label:'+ Помещение', fn:addRoom});
+  items.push({label:'Вписать лист', fn:fitView});
+  items.push({label:'К содержимому', fn:centerOnContent});
+
+  contextMenu.innerHTML = items.map((it, i)=>{
+    if(it==='---') return '<div class="sep"></div>';
+    return `<button data-i="${i}">${esc(it.label)}</button>`;
+  }).join('');
+  contextMenu.querySelectorAll('button').forEach(btn=>{
+    const i = +btn.dataset.i;
+    btn.addEventListener('click', ()=>{
+      contextMenu.classList.remove('open');
+      items[i].fn();
+    });
+  });
+  contextMenu.classList.add('open');
+  /* Position; clamp to viewport */
+  contextMenu.style.left = Math.min(e.clientX, window.innerWidth - 200) + 'px';
+  contextMenu.style.top = Math.min(e.clientY, window.innerHeight - contextMenu.offsetHeight - 10) + 'px';
+}
+window.addEventListener('mousedown', e=>{
+  if(!e.target.closest('.context')) contextMenu.classList.remove('open');
+});
+
+/* =================================================================
+   SECTION 16 — Keyboard
+================================================================= */
+
+function setupKeyboard(){
+  window.addEventListener('keydown', e=>{
+    /* Don't capture when typing in fields */
+    if(e.target.matches('input,select,textarea')) return;
+    if(e.key==='Delete' || e.key==='Backspace'){
+      if(selected.type){
+        e.preventDefault();
+        if(selected.type==='device'){ deleteDevice(selected.id); }
+        else if(selected.type==='room'){ deleteRoom(selected.id); }
+        else if(selected.type==='cable'){ deleteCable(selected.id); }
+        selected = { type:null, id:null };
+        renderAll();
+      }
+    }
+    if(e.key==='v' || e.key==='V') setTool('select');
+    if(e.key==='c' || e.key==='C') setTool('connect');
+    if(e.key==='h' || e.key==='H') setTool('pan');
+    if(e.key==='Escape'){
+      pendingPort = null;
+      contextMenu.classList.remove('open');
+      closeAddBlock(); closeSheetEditor();
+      renderStage();
+    }
+    if(e.key==='f' || e.key==='F') fitView();
+  });
+}
+
+/* =================================================================
+   SECTION 17 — Wide mode / Inspector toggle
+================================================================= */
+
+function toggleWide(){
+  wideMode = !wideMode;
+  document.getElementById('app').classList.toggle('wide', wideMode);
+  document.getElementById('btnWide').textContent = wideMode ? 'Обычный режим' : 'Большая схема';
+  document.getElementById('btnInsp').style.display = wideMode ? 'inline-block' : 'none';
+  setTimeout(applyTransform, 50);
+}
+function toggleInspector(){
+  inspectorHidden = !inspectorHidden;
+  inspector.classList.toggle('hidden', inspectorHidden);
+  document.getElementById('btnInsp').textContent = inspectorHidden ? 'Показать инспектор' : 'Скрыть инспектор';
+}
+
+/* =================================================================
+   SECTION 18 — Sheet editor
+================================================================= */
+
+function openSheetEditor(){
+  document.getElementById('modalSheet').classList.add('open');
+  document.getElementById('s_sheet').value = project.sheet;
+  document.getElementById('s_no').value = project.sheetNo;
+  document.getElementById('s_title').value = project.sheetTitle;
+  document.getElementById('s_code').value = project.sheetCode;
+  document.getElementById('s_stage').value = project.sheetStage;
+  document.getElementById('s_section').value = project.sheetSection;
+  document.getElementById('s_date').value = project.sheetDate;
+  document.getElementById('s_dev').value = project.sheetDev;
+  document.getElementById('s_chk').value = project.sheetChk;
+  document.getElementById('s_note').value = project.sheetNote;
+}
+function closeSheetEditor(){ document.getElementById('modalSheet').classList.remove('open') }
+function saveSheet(){
+  project.sheet = document.getElementById('s_sheet').value;
+  project.sheetNo = document.getElementById('s_no').value;
+  project.sheetTitle = document.getElementById('s_title').value;
+  project.sheetCode = document.getElementById('s_code').value;
+  project.sheetStage = document.getElementById('s_stage').value;
+  project.sheetSection = document.getElementById('s_section').value;
+  project.sheetDate = document.getElementById('s_date').value;
+  project.sheetDev = document.getElementById('s_dev').value;
+  project.sheetChk = document.getElementById('s_chk').value;
+  project.sheetNote = document.getElementById('s_note').value;
+  closeSheetEditor();
+  renderAll();
+}
+
+/* =================================================================
+   SECTION 19 — Persistence: localStorage / JSON
+================================================================= */
+
+const STORAGE_KEY = 'cablejournal_cad_v2';
+
+function saveLocal(){
+  const data = { project, rooms, devices, cables, counters };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  setStatus('Сохранено в localStorage');
+}
+/* aliases matching spec section 19 naming */
+function saveProject(){ return saveLocal() }
+function loadProject(){ return loadLocal() }
+function loadLocal(){
+  const s = localStorage.getItem(STORAGE_KEY);
+  if(!s){ alert('Нет сохранённого проекта'); return }
+  try{
+    const d = JSON.parse(s);
+    Object.assign(project, d.project||{});
+    rooms = d.rooms||[];
+    devices = d.devices||[];
+    cables = d.cables||[];
+    counters = d.counters||{};
+    renderAll();
+    setStatus('Загружено из localStorage');
+  }catch(err){ alert('Ошибка загрузки: '+err.message) }
+}
+function exportJSON(){
+  const data = { project, rooms, devices, cables, counters };
+  const blob = new Blob([JSON.stringify(data,null,2)], { type:'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (project.sheetCode || 'cable-journal') + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus('JSON экспортирован');
+}
+function importJSONFile(e){
+  const f = e.target.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const d = JSON.parse(r.result);
+      Object.assign(project, d.project||{});
+      rooms = d.rooms||[];
+      devices = d.devices||[];
+      cables = d.cables||[];
+      counters = d.counters||{};
+      renderAll();
+      setStatus('JSON загружен');
+    }catch(err){ alert('Ошибка импорта: '+err.message) }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+}
+
+/* =================================================================
+   SECTION 20 — Excel / PDF export
+================================================================= */
+
+function xlsEsc(v){ return String(v??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+
+/* alias matching spec section 19 naming */
+function exportExcel(){ return exportXLS() }
+
+function exportXLS(){
+  /* SpreadsheetML (Excel XML 2003) — Excel-compatible, allows fine-grained formatting */
+  const rows = cables.map((c, i)=>{
+    const da = devices.find(d=>d.id===c.fromDeviceId);
+    const db = devices.find(d=>d.id===c.toDeviceId);
+    const pa = da ? da.ports[c.fromPortIndex] : null;
+    const pb = db ? db.ports[c.toPortIndex] : null;
+    return [
+      i+1, c.mark, c.cable,
+      da?.roomNo||'', (da?.code||'')+' '+(da?.title||''), pa ? `${pa.num} ${pa.name}` : '',
+      db?.roomNo||'', (db?.code||'')+' '+(db?.title||''), pb ? `${pb.num} ${pb.name}` : '',
+      c.signal,
+      c.routeGofra||'', c.routeChannel||'', c.routeTray||'', c.routeOpen||'',
+      c.lengthM, c.note||''
+    ];
+  });
+
+  const header1 = ['№','Маркировка кабеля','Тип кабеля',
+    'Начало','','','Конец','','','Тип сигнала',
+    'Способ прокладки, м','','','','Длина общая, м','Примечание'];
+  const header2 = ['','','','№ пом.','Оборудование','Порт','№ пом.','Оборудование','Порт','',
+    'в гофре','в канале','в лотке','открыто','',''];
+
+  const xmlRows = (data, isHeader)=> {
+    return data.map(r=>{
+      const cells = r.map(v=>{
+        const isNum = typeof v === 'number';
+        const styleId = isHeader ? 'sH' : 'sB';
+        return `<Cell ss:StyleID="${styleId}"><Data ss:Type="${isNum?'Number':'String'}">${xlsEsc(v)}</Data></Cell>`;
+      }).join('');
+      return `<Row>${cells}</Row>`;
+    }).join('');
+  };
+
+  /* Build merge cells for the two-level header (manually create a flat row would require ss:MergeAcross).
+     Simpler approach: build header row with merges. */
+  const headerRow1 = `<Row ss:StyleID="rH">
+    <Cell ss:StyleID="sH" ss:MergeDown="1"><Data ss:Type="String">№</Data></Cell>
+    <Cell ss:StyleID="sH" ss:MergeDown="1"><Data ss:Type="String">Маркировка кабеля</Data></Cell>
+    <Cell ss:StyleID="sH" ss:MergeDown="1"><Data ss:Type="String">Тип кабеля</Data></Cell>
+    <Cell ss:StyleID="sH" ss:MergeAcross="2"><Data ss:Type="String">Начало (трасса)</Data></Cell>
+    <Cell/><Cell/>
+    <Cell ss:StyleID="sH" ss:MergeAcross="2"><Data ss:Type="String">Конец (трасса)</Data></Cell>
+    <Cell/><Cell/>
+    <Cell ss:StyleID="sH" ss:MergeDown="1"><Data ss:Type="String">Тип сигнала</Data></Cell>
+    <Cell ss:StyleID="sH" ss:MergeAcross="3"><Data ss:Type="String">Способ прокладки, м</Data></Cell>
+    <Cell/><Cell/><Cell/>
+    <Cell ss:StyleID="sH" ss:MergeDown="1"><Data ss:Type="String">Длина общая, м</Data></Cell>
+    <Cell ss:StyleID="sH" ss:MergeDown="1"><Data ss:Type="String">Примечание</Data></Cell>
+  </Row>`;
+  const headerRow2 = `<Row ss:StyleID="rH">
+    <Cell/><Cell/><Cell/>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">№ пом.</Data></Cell>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">Оборудование</Data></Cell>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">Порт</Data></Cell>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">№ пом.</Data></Cell>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">Оборудование</Data></Cell>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">Порт</Data></Cell>
+    <Cell/>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">в гофре</Data></Cell>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">в канале</Data></Cell>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">в лотке</Data></Cell>
+    <Cell ss:StyleID="sH"><Data ss:Type="String">открыто</Data></Cell>
+    <Cell/><Cell/>
+  </Row>`;
+
+  const dataRows = xmlRows(rows, false);
+
+  const xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:html="http://www.w3.org/TR/REC-html40">
+  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+    <Title>${xlsEsc(project.sheetTitle)}</Title>
+    <Author>Кабельный журнал CAD</Author>
+  </DocumentProperties>
+  <Styles>
+    <Style ss:ID="Default" ss:Name="Normal">
+      <Font ss:FontName="ISOCPEUR" ss:Size="12" ss:Italic="1"/>
+      <Alignment ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="sH">
+      <Font ss:FontName="ISOCPEUR" ss:Size="12" ss:Italic="1" ss:Bold="1"/>
+      <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+      <Interior ss:Color="#E2E8F0" ss:Pattern="Solid"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="sB">
+      <Font ss:FontName="ISOCPEUR" ss:Size="12" ss:Italic="1"/>
+      <Alignment ss:Vertical="Center" ss:WrapText="1"/>
+      <Borders>
+        <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>
+        <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>
+        <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>
+        <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>
+      </Borders>
+    </Style>
+    <Style ss:ID="rH"><Alignment ss:Vertical="Center"/></Style>
+  </Styles>
+  <Worksheet ss:Name="Кабельный журнал">
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+      <PageSetup>
+        <Layout x:Orientation="Landscape" x:CenterHorizontal="1"/>
+        <PageMargins x:Bottom="0.4" x:Left="0.4" x:Right="0.4" x:Top="0.4"/>
+      </PageSetup>
+      <Print><PaperSizeIndex>9</PaperSizeIndex></Print>
+    </WorksheetOptions>
+    <Table>
+      <Column ss:Width="32"/>
+      <Column ss:Width="100"/>
+      <Column ss:Width="110"/>
+      <Column ss:Width="55"/><Column ss:Width="140"/><Column ss:Width="80"/>
+      <Column ss:Width="55"/><Column ss:Width="140"/><Column ss:Width="80"/>
+      <Column ss:Width="75"/>
+      <Column ss:Width="55"/><Column ss:Width="55"/><Column ss:Width="55"/><Column ss:Width="55"/>
+      <Column ss:Width="60"/><Column ss:Width="120"/>
+      ${headerRow1}
+      ${headerRow2}
+      ${dataRows}
+    </Table>
+  </Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xml], { type:'application/vnd.ms-excel' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (project.sheetCode||'cable-journal') + '.xls';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setStatus('Excel экспортирован');
+}
+
+function exportPDF(){
+  /* Print via browser. CSS @media print hides UI, shows only stage + sheet */
+  const oz = zoom, op = {...pan};
+  zoom = 1; pan = { x: 0, y: 0 };
+  applyTransform();
+  setTimeout(()=>{
+    window.print();
+    zoom = oz; pan = op;
+    applyTransform();
+  }, 200);
+}
+
+/* =================================================================
+   SECTION 21 — Validation
+================================================================= */
+
+function validateProject(){
+  const issues = [];
+  /* Orphan cables */
+  cables.forEach(c=>{
+    if(!devices.find(d=>d.id===c.fromDeviceId)) issues.push(`Кабель ${c.mark}: устройство-источник не найдено`);
+    if(!devices.find(d=>d.id===c.toDeviceId)) issues.push(`Кабель ${c.mark}: устройство-приёмник не найдено`);
+  });
+  /* Duplicate marks */
+  const seen = new Map();
+  cables.forEach(c=>{
+    if(seen.has(c.mark)) issues.push(`Дубликат маркировки: ${c.mark}`);
+    seen.set(c.mark, true);
+  });
+  /* Devices without code */
+  devices.forEach(d=>{
+    if(!d.code) issues.push(`Блок «${d.title}»: пустое обозначение`);
+  });
+  const msg = issues.length ? ('Найдено '+issues.length+' замечаний:\n\n'+issues.join('\n')) : 'Проект в порядке: замечаний нет.';
+  alert(msg);
+  setStatus(issues.length ? 'Замечаний: '+issues.length : 'Проект в порядке');
+}
+
+/* =================================================================
+   SECTION 22 — Command line
+================================================================= */
+
+function runCommand(s){
+  const cmd = (s||'').trim().toLowerCase();
+  if(!cmd) return;
+  if(cmd==='block')   openAddBlock();
+  else if(cmd==='room')    addRoom();
+  else if(cmd==='cable')   setTool('connect');
+  else if(cmd==='delete')  {
+    if(selected.type){
+      if(selected.type==='device') deleteDevice(selected.id);
+      else if(selected.type==='room') deleteRoom(selected.id);
+      else if(selected.type==='cable') deleteCable(selected.id);
+      selected={type:null,id:null}; renderAll();
+    }
+  }
+  else if(cmd==='fit')     fitView();
+  else if(cmd==='demo')    loadDemo();
+  else if(cmd==='pdf')     exportPDF();
+  else if(cmd==='save')    saveLocal();
+  else if(cmd==='check')   validateProject();
+  else if(cmd==='clear')   { if(confirm('Очистить проект?')){ rooms=[];devices=[];cables=[];counters={};selected={type:null,id:null};renderAll() } }
+  else { setStatus('Неизвестная команда: '+cmd); return }
+  setStatus('Команда: '+cmd);
+}
+
+/* =================================================================
+   SECTION 23 — Demo
+================================================================= */
+
+function loadDemo(){
+  if(devices.length || rooms.length){
+    if(!confirm('Заменить текущий проект демо-данными?')) return;
+  }
+  rooms = []; devices = []; cables = []; counters = {};
+  addRoom();
+  rooms[0].name = 'Серверная'; rooms[0].roomNo = '0.4.31';
+  rooms[0].x = 100; rooms[0].y = 200; rooms[0].w = 700; rooms[0].h = 600;
+
+  addRoom();
+  rooms[1].name = 'Переговорная'; rooms[1].roomNo = '0.4.45';
+  rooms[1].x = 900; rooms[1].y = 200; rooms[1].w = 700; rooms[1].h = 600;
+
+  addDevice(PRESETS[1], 160, 280);  // switch
+  devices.at(-1).roomNo = '0.4.31';
+  addDevice(PRESETS[3], 160, 600);  // patch panel
+  devices.at(-1).roomNo = '0.4.31';
+  addDevice(PRESETS[7], 960, 280);  // HDBaseT TX
+  devices.at(-1).roomNo = '0.4.45';
+  addDevice(PRESETS[8], 960, 540);  // HDBaseT RX
+  devices.at(-1).roomNo = '0.4.45';
+  addDevice(PRESETS[10], 1280, 540); // display
+  devices.at(-1).roomNo = '0.4.45';
+
+  selected = { type:null, id:null };
+  renderAll();
+  setTimeout(()=>{
+    /* connect a couple of cables */
+    if(devices.length>=2){
+      createCable(devices[0].id, 2, devices[1].id, 0);  // switch out 1 → patch krone 1
+    }
+    if(devices.length>=4){
+      createCable(devices[2].id, 1, devices[3].id, 0);  // HDBaseT TX out → HDBaseT RX in
+    }
+    if(devices.length>=5){
+      createCable(devices[3].id, 1, devices[4].id, 0);  // HDBaseT RX out → display HDMI 1
+    }
+    selected = { type:null, id:null };
+    renderAll();
+    centerOnContent();
+    setStatus('Демо-проект загружен');
+  }, 100);
+}
+
+/* =================================================================
+   SECTION 24 — Boot
+================================================================= */
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
